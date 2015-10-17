@@ -35,7 +35,7 @@ def write_control_files(calib_dir, const_name):
             new_file.write("# LDOPT\n")
             new_file.write('2\n')  # monthly load option
             new_file.write('# MODNO\n')
-            new_file.write('0\n')
+            new_file.write('0\n')  # automated model selection option
             new_file.write('# NCONST\n')
             new_file.write('1\n')
             new_file.write('# CNAME, UCFLAG, ULFLAG\n')
@@ -70,7 +70,23 @@ def process_est_files(est_file_dir):
         save_as = os.path.join(est_file_dir, file[:-4] + '_e.inp')
         shutil.copyfile(newpath, save_as)
         os.remove(filepath)
+
+def plot_residuals(input_dir_list, const_list):
+    """Make residual plots from LOADEST results to assess normality."""
     
+    for idx in xrange(len(input_dir_list)):
+        input_dir = input_dir_list[idx]
+        const = const_list[idx]
+        result_dir = os.path.join(input_dir, 'loadest_results')
+        resid_dir = os.path.join(input_dir, 'loadest_residuals')
+        if not os.path.exists(resid_dir):
+            os.makedirs(resid_dir)
+        calib_file_dir = os.path.join(input_dir, 'loadest_calib_files')
+        site_list = [file[:-4] for file in os.listdir(calib_file_dir)]
+        for site in site_list:
+            fname = '%s.res' % const
+            res_file = os.path.join(result_dir, site + '_' + fname)
+        
 def run_LOADEST(input_dir, loadest_dir, const_name):
     """Move the relevant files into the local LOADEST directory and launch
     LOADEST."""
@@ -134,4 +150,6 @@ loadest_dir = 'C:/Users/Ginger/Documents/NatCap/GIS_local/Joanna/loadest'
 
 if __name__ == "__main__":
     # write_control_files(sdr_calib_dir, 'Sediment')
+    # est_file_dir = os.path.join(sdr_input_dir, 'loadest_est_files')
+    # process_est_files(est_file_dir)
     run_LOADEST(sdr_input_dir, loadest_dir, sdr_const_name)
