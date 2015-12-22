@@ -129,7 +129,36 @@ def combine_tables(table_dir, output_csv):
                 print table
     sum_df = pd.DataFrame.from_dict(sum_dict)
     sum_df.to_csv(output_csv)
+
+def pH_to_h_conc(pH_raster):
+    """Convert a raster of pH values to hydrogen ion concentration so that
+    average can be calculated."""
     
+    dataset = gdal.Open(pH_raster)
+    band = dataset.GetRasterBand(1)
+    nodata = band.GetNoDataValue()
+    del dataset
+    del band
+    out_pixel_size = pygeoprocessing.geoprocessing.get_cell_size_from_uri(
+                                                                pH_raster)                                                            
+    out_name = os.path.join(os.path.dirname(pH_raster), "h_conc.tif")
+    def convert_to_h_conc(pH_arr):
+        h_conc_arr = np.empty(pH_arr.shape)
+        for row in xrange(pH_arr.shape[0]):
+            for col in xrange(pH_arr.shape[1]):
+                pH = pH_arr[row][col]
+                if pH < 0:
+                    h_conc_arr[row][col] = np.nan
+                else:
+                    h_conc_arr[row][col] = 10**(-pH)
+        return h_conc_arr
+    
+    pygeoprocessing.geoprocessing.vectorize_datasets(
+                [pH_raster], convert_to_h_conc, out_name,
+                gdal.GDT_Float32, nodata, out_pixel_size, "union",
+                dataset_to_align_index=0, assert_datasets_projected=False,
+                vectorize_op=False, datasets_are_pre_aligned=True)
+                
 def process_climate_rasters(climate_dir):
     """The raw temp rasters from WorldClim are supplied as deg C * 10.  Divide
     them all by 10 to get deg C for CENTURY.  The precip rasters from WorldClim
@@ -162,24 +191,26 @@ def process_climate_rasters(climate_dir):
 if __name__ == "__main__":
     arcpy.env.overwriteOutput = 1
     
-    # soil_raster_folder = soil_out
-    # soil_zones = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/bld_3_zones.tif"
-    # soil_outdir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/soil_summary_tables"
-    # arcpy.env.workspace = soil_raster_folder
-    # soil_rasters = arcpy.ListRasters()
-    # summarize_by_zone(soil_rasters, soil_zones, soil_outdir)
-    # summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/soil_summary.csv"
-    # combine_tables(soil_outdir, summary_csv)
+    pH_raster = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/climate_and_soil/soil_grids_processed/PHIHOX_weighted_sum_0-15.tif"
+    # pH_to_h_conc(pH_raster)
+    soil_raster_folder = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/climate_and_soil/soil_grids_processed"
+    soil_zones = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/bld_3_zones_grz.tif"
+    soil_outdir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/soil_summary_tables"
+    arcpy.env.workspace = soil_raster_folder
+    soil_rasters = arcpy.ListRasters()
+    summarize_by_zone(soil_rasters, soil_zones, soil_outdir)
+    summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/soil_summary.csv"
+    combine_tables(soil_outdir, summary_csv)
     
     climate_raster_folder = clim_folder
-    summarize_rasters(climate_raster_folder)
-    process_climate_rasters(climate_raster_folder)
-    # climate_zones = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/mean_prec_3_zones.tif"
-    # clim_outdir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/clim_summary_tables"
-    # climate_dir = os.path.join(climate_raster_folder, 'converted')
-    # arcpy.env.workspace = climate_dir
-    # climate_rasters = arcpy.ListRasters()
+    # summarize_rasters(climate_raster_folder)
+    # process_climate_rasters(climate_raster_folder)
+    climate_zones = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/mean_prec_3_zones_grz.tif"
+    clim_outdir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/clim_summary_tables"
+    climate_dir = os.path.join(climate_raster_folder, 'converted')
+    arcpy.env.workspace = climate_dir
+    climate_rasters = arcpy.ListRasters()
     # summarize_by_zone(climate_rasters, climate_zones, clim_outdir)
-    # summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/climate_summary.csv"
+    summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/climate_summary.csv"
     # combine_tables(clim_outdir, summary_csv)
     
