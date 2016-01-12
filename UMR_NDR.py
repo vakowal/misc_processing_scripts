@@ -18,7 +18,7 @@ if __name__ == '__main__':
             u'calc_p': False,
             u'dem_uri': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Floodplain/MS_project/data/UMR_DEM_90m_fill.tif',
             u'k_param': u'2',
-            u'lulc_uri': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Floodplain/MS_project/data/LULC/NASS_CDL_DEM_AOI_ext_rmp.tif',
+            u'lulc_uri': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Floodplain/MS_project/data/LULC/NASS_CDL_DEM_AOI_ext_rmp_prj.tif',
             u'results_suffix': '',
             u'subsurface_critical_length_n': u'1500',
             u'subsurface_eff_n': u'0.5',
