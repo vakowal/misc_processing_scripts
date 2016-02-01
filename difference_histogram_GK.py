@@ -83,41 +83,52 @@ def calc_baseline_MSA(scenario_folder, baseline_raster, shapefile_uri,
         
         
 
-def histogram(output_dir):
-    for msa_path in glob.glob(r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO\MT_MSA_results\subtracted\*.tif"):
-        
-            print "PROCESSING SCENARIO %s" % msa_path
-            suffix = os.path.splitext(os.path.basename(msa_path))[0]
-            print suffix
-            raster = gdal.Open(msa_path)
-            band = raster.GetRasterBand(1)
-            array = band.ReadAsArray()
-            unique_values = pygeoprocessing.unique_raster_values_uri(msa_path)
-            table = open(os.path.join(output_dir, suffix + '.csv'), 'wb')
-            table.write('MSAvalue,count\n')
-            print array.shape
-            for value in unique_values:
-                table.write('%s,%s\n' % (str(value), str(numpy.count_nonzero(array==value))))
+def histogram(scenario_folder, output_dir):
+    subtracted_folder = os.path.join(scenario_folder, "subtracted")
+    tif_names = [f for f in os.listdir(subtracted_folder) if
+                                                         re.search(".tif$", f)]
+    tif_files = [os.path.join(subtracted_folder, name) for name in tif_names]
+    for msa_path in tif_files:
+        print "PROCESSING SCENARIO %s" % msa_path
+        suffix = os.path.splitext(os.path.basename(msa_path))[0]
+        print suffix
+        raster = gdal.Open(msa_path)
+        band = raster.GetRasterBand(1)
+        array = band.ReadAsArray()
+        unique_values = pygeoprocessing.unique_raster_values_uri(msa_path)
+        table = open(os.path.join(output_dir, suffix + '.csv'), 'wb')
+        table.write('MSAvalue,count\n')
+        print array.shape
+        for value in unique_values:
+            table.write('%s,%s\n' % (str(value), str(numpy.count_nonzero(array==value))))
 
 if __name__ == "__main__":
-    ## BECKY set these values here
-    
-    scenario_folder = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO\MT_MSA_results"
-    # scenario_folder = r"C:\Users\Ginger\Downloads\IA_scenarios"
-    # baseline_raster = r"C:\Users\Ginger\Downloads\msa_IA_2007_baseline.tif"
-    # shapefile_uri = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Becky_GLOBIO_reproduce_1.20.16\Iowa_globio_inputs\IA_aoi.shp"
-    # baseline raster: the baseline raster you want to subtract from scenarios
-    baseline_raster = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO\MT_MSA_results\msa_MT_scen_A_UTM.tif"
-    # shapefile_uri = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Becky_GLOBIO_reproduce_1.20.16\MT_globio_inputs\MT_aoi.shp"
-    # shapefile_uri = r"C:\Users\Ginger\Dropbox\NatCap_backup\Unilever\Unilever_model_inputs_10.6.15\Iowa_state_extent\Iowa_UTM.shp"
-    # summary_table = r"C:\Users\Ginger\Desktop\baseline_mean_msa.csv"
-    #Iowa
-    # baseline_raster = r"C:\Users\Ginger\Downloads\msa_MT_2007_baseline.tif"
-    
-    subtract_rasters(scenario_folder, baseline_raster)
+    ## Mato Grosso
+    scenario_folder = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO\Mato_Grosso\MT_MSA_results"
+    baseline_raster = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO\Mato_Grosso\MT_MSA_results\msa_MT_A_modis_orig_cleaned.tif"
+    shapefile_uri = r"C:\Users\Ginger\Dropbox\NatCap_backup\Unilever\Unilever_model_inputs_10.6.15\MatoGrosso_state_extent\Becky_GLOBIO_inputs_MT_1.20.16\MT_aoi.shp"
     output_dir = os.path.join(scenario_folder, 'histogram')
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    histogram(output_dir)
+    basline_msa_summary_table = os.path.join(scenario_folder, "baseline_mean_msa.csv")
+    
+    # subtract_rasters(scenario_folder, baseline_raster)
+    # histogram(scenario_folder, output_dir)
+    # calc_baseline_MSA(scenario_folder, baseline_raster, shapefile_uri,
+                      # basline_msa_summary_table)
+                      
+    ## Iowa
+    scenario_folder = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO\Iowa\IA_MSA_results"
+    baseline_raster = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO\Iowa\IA_MSA_results\msa_IA_A_modis_orig_cleaned.tif"
+    shapefile_uri = r"C:\Users\Ginger\Dropbox\NatCap_backup\Unilever\Unilever_model_inputs_10.6.15\Iowa_state_extent\Becky_GLOBIO_inputs_IA_1.20.16\IA_aoi.shp"
+    output_dir = os.path.join(scenario_folder, 'histogram')
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    basline_msa_summary_table = os.path.join(scenario_folder, "baseline_mean_msa.csv")
+    
+    subtract_rasters(scenario_folder, baseline_raster)
+    histogram(scenario_folder, output_dir)
     calc_baseline_MSA(scenario_folder, baseline_raster, shapefile_uri,
-                      summary_table)
+                      basline_msa_summary_table)
+                      
+    
