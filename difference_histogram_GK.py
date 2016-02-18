@@ -104,31 +104,31 @@ def histogram(scenario_folder, output_dir):
 
 if __name__ == "__main__":
     ## Mato Grosso
-    scenario_folder = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO\Mato_Grosso\MT_MSA_results"
-    baseline_raster = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO\Mato_Grosso\MT_MSA_results\msa_MT_A_modis_orig_cleaned.tif"
-    shapefile_uri = r"C:\Users\Ginger\Dropbox\NatCap_backup\Unilever\Unilever_model_inputs_10.6.15\MatoGrosso_state_extent\Becky_GLOBIO_inputs_MT_1.20.16\MT_aoi.shp"
-    output_dir = os.path.join(scenario_folder, 'histogram')
+    scenario_folder = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO_uncertainty\Mato_Grosso\MSA_results"
+    baseline_raster = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO_uncertainty\Mato_Grosso\msa_scen_0_plusSE.tif"
+    shapefile_uri = r"C:\Users\Ginger\Dropbox\Unilever_bioplastics_model_inputs\MT_globio\MT_state_aoi.shp"
+    output_dir = os.path.join(scenario_folder, 'histogram_MT_plusSE')
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    basline_msa_summary_table = os.path.join(scenario_folder, "baseline_mean_msa.csv")
-    
-    # subtract_rasters(scenario_folder, baseline_raster)
-    # histogram(scenario_folder, output_dir)
-    # calc_baseline_MSA(scenario_folder, baseline_raster, shapefile_uri,
-                      # basline_msa_summary_table)
-                      
-    ## Iowa
-    scenario_folder = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO\Iowa\IA_MSA_results"
-    baseline_raster = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO\Iowa\IA_MSA_results\msa_IA_A_modis_orig_cleaned.tif"
-    shapefile_uri = r"C:\Users\Ginger\Dropbox\NatCap_backup\Unilever\Unilever_model_inputs_10.6.15\Iowa_state_extent\Becky_GLOBIO_inputs_IA_1.20.16\IA_aoi.shp"
-    output_dir = os.path.join(scenario_folder, 'histogram')
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    basline_msa_summary_table = os.path.join(scenario_folder, "baseline_mean_msa.csv")
+    baseline_msa_summary_table = os.path.join(scenario_folder, "baseline_mean_msa_MT_plusSE.csv")
     
     subtract_rasters(scenario_folder, baseline_raster)
     histogram(scenario_folder, output_dir)
     calc_baseline_MSA(scenario_folder, baseline_raster, shapefile_uri,
-                      basline_msa_summary_table)
+                      baseline_msa_summary_table)
+                      
+    ## Iowa
+    scenario_folder = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO_uncertainty\Iowa\MSA_results"
+    baseline_raster = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\Uncertainty_scenario_results\GLOBIO_uncertainty\Iowa\msa_scen_0_plusSE.tif"
+    shapefile_uri = r"C:\Users\Ginger\Dropbox\Unilever_bioplastics_model_inputs\IA_globio\Iowa_state_aoi.shp"
+    output_dir = os.path.join(scenario_folder, 'histogram_IA_plusSE')
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    baseline_msa_summary_table = os.path.join(scenario_folder, "baseline_mean_msa_IA_plusSE.csv")
+    
+    subtract_rasters(scenario_folder, baseline_raster)
+    histogram(scenario_folder, output_dir)
+    calc_baseline_MSA(scenario_folder, baseline_raster, shapefile_uri,
+                      baseline_msa_summary_table)
                       
     
