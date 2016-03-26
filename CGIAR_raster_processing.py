@@ -198,9 +198,9 @@ if __name__ == "__main__":
     soil_outdir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/soil_summary_tables"
     arcpy.env.workspace = soil_raster_folder
     soil_rasters = arcpy.ListRasters()
-    summarize_by_zone(soil_rasters, soil_zones, soil_outdir)
+    # summarize_by_zone(soil_rasters, soil_zones, soil_outdir)
     summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/soil_summary.csv"
-    combine_tables(soil_outdir, summary_csv)
+    # combine_tables(soil_outdir, summary_csv)
     
     climate_raster_folder = clim_folder
     # summarize_rasters(climate_raster_folder)
@@ -213,4 +213,14 @@ if __name__ == "__main__":
     # summarize_by_zone(climate_rasters, climate_zones, clim_outdir)
     summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/climate_summary.csv"
     # combine_tables(clim_outdir, summary_csv)
+    
+    elev_raster = [r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Forage_model_data\Elevation\strm_1k_canete.tif"]
+    clim_intermediate_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Forage_model_data\summarized_by_zone\elevation_by_clim"
+    soil_intermediate_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Forage_model_data\summarized_by_zone\elevation_by_soil"
+    summarize_by_zone(elev_raster, climate_zones, clim_intermediate_dir)
+    summarize_by_zone(elev_raster, soil_zones, soil_intermediate_dir)
+    summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/elev_by_clim.csv"
+    combine_tables(clim_intermediate_dir, summary_csv)
+    summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/elev_by_soil.csv"
+    combine_tables(soil_intermediate_dir, summary_csv)
     

@@ -13,6 +13,34 @@ import pandas as pd
 # veg_type_cols = [f for f in df.columns.values if re.search('^l_8', f)]
 # pasture_name_cols = ['l_8_1', 'l_8_2', 'l_8_3', 'l_8_4', 'l_8_5']
 
+def retrieve_months_grazed(df):
+    """Make a table containing the months grazed for each pasture."""
+    
+    combID_list = []
+    months_list = []
+    for row in xrange(len(df)):
+        HH_ID = df.iloc[row].id_hogar
+        for i in [1, 2, 3, 4, 5]:
+            col = 'l_8_' + str(i)
+            if df.iloc[row][col] != '':
+                combID_list.append('%i_%s' % (HH_ID, df.iloc[row][col]))
+                months = []
+                for m in range(1, 14):
+                    col = 'l_11_%d_%d' % (i, m)
+                    try:
+                        if df.iloc[row][col] == 1:
+                            months.append(m)
+                    except KeyError:
+                        continue
+                months_list.append(months)
+    months_dict = {'comb_id': combID_list,
+                   'months': months_list
+                   }
+    m_df = pd.DataFrame(months_dict)
+    m_df.set_index(['comb_id'], inplace=True)
+    save_as = r"C:\Users\Ginger\Dropbox\NatCap_backup\CGIAR\Peru\Household_survey_livestock_portion\months_grazed_table.csv"
+    m_df.to_csv(save_as)
+
 def retrieve_stocking_density(df):
     """Make a table with total reported area across pastures and total number
     of animals of each type, for each respondent in the survey."""
@@ -122,4 +150,4 @@ def retrieve_pasture_quantity(df):
 if __name__ == "__main__":    
     stata_file = r"C:\Users\Ginger\Dropbox\NatCap_backup\CGIAR\Peru\Household_survey_livestock_portion\Database livestock.dta"
     df = pd.read_stata(stata_file)
-    retrieve_stocking_density(df)
+    retrieve_months_grazed(df)
