@@ -217,10 +217,25 @@ if __name__ == "__main__":
     elev_raster = [r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Forage_model_data\Elevation\strm_1k_canete.tif"]
     clim_intermediate_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Forage_model_data\summarized_by_zone\elevation_by_clim"
     soil_intermediate_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Forage_model_data\summarized_by_zone\elevation_by_soil"
-    summarize_by_zone(elev_raster, climate_zones, clim_intermediate_dir)
-    summarize_by_zone(elev_raster, soil_zones, soil_intermediate_dir)
+    # summarize_by_zone(elev_raster, climate_zones, clim_intermediate_dir)
+    # summarize_by_zone(elev_raster, soil_zones, soil_intermediate_dir)
     summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/elev_by_clim.csv"
-    combine_tables(clim_intermediate_dir, summary_csv)
+    # combine_tables(clim_intermediate_dir, summary_csv)
     summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/elev_by_soil.csv"
-    combine_tables(soil_intermediate_dir, summary_csv)
+    # combine_tables(soil_intermediate_dir, summary_csv)
+    
+    pH_raster = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/climate_and_soil/soil_grids_processed/PHIHOX_weighted_sum_0-15.tif"
+    pH_to_h_conc(pH_raster)
+    soil_raster_folder = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/climate_and_soil/soil_grids_processed"
+    soil_outdir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/soil_summary_tables_SWAT_subbasins"
+    arcpy.env.workspace = soil_raster_folder
+    soil_rasters = arcpy.ListRasters()
+    zone_shp = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/boundaries/SWAT_subbasins.shp"
+    soil_zones = # "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/bld_3_zones_grz.tif"
+    align_to = soil_rasters[0]
+    pygeoprocessing.geoprocessing.
+    
+    summarize_by_zone(soil_rasters, soil_zones, soil_outdir)
+    summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/summarized_by_zone/soil_summary_SWAT_subbasins.csv"
+    combine_tables(soil_outdir, summary_csv)
     
