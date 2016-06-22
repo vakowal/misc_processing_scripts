@@ -61,12 +61,12 @@ def create_mv_rasters(mv_table, subbasin_tif, outdir):
 def summarize_mv_by_HRU():
     HRU_zones = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Peru\Other_spatial_data\HRU_BLUG-FESC-RYEG.tif"
     zero_raster = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Peru\Other_spatial_data\HRU_BLUG-FESC-RYEG-0.tif"
-    objectives = ['sdr', 'swy', 'swyl']
+    objectives = ['livestock']  # ['sdr', 'swy', 'swyl']
     for obj in objectives:
-        raster_folder = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_mv_rasters_6.2.16" % obj
+        raster_folder = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_mv_rasters_6.10.16" % obj
         arcpy.env.workspace = raster_folder
         mv_rasters = arcpy.ListRasters()
-        save_dir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_mv_rasters_mosaic_6.2.16" % obj
+        save_dir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_mv_rasters_mosaic_6.10.16" % obj
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         for raster in mv_rasters:
@@ -77,11 +77,11 @@ def summarize_mv_by_HRU():
                                                "LAST", "")
         arcpy.env.workspace = save_dir
         mv_rasters = arcpy.ListRasters()
-        HRU_outdir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_summary_tables_by_HRU_6.1.16" % obj
+        HRU_outdir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_summary_tables_by_HRU_6.10.16" % obj
         if not os.path.exists(HRU_outdir):
             os.makedirs(HRU_outdir)
         summarize_by_zone(mv_rasters, HRU_zones, HRU_outdir)
-        summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_mv_by_HRU_6.1.16.csv" % obj
+        summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_mv_by_HRU_6.10.16.csv" % obj
         combine_tables(HRU_outdir, summary_csv)
 
 def extract_by_mask(folder, mask, outdir):
@@ -300,10 +300,10 @@ if __name__ == "__main__":
     # # combine_tables(soil_outdir, summary_csv)
     
     # ## create livestock marginal value tables and summarize them by SWAT HRU
-    # mv_table = r"C:\Users\Ginger\Dropbox\NatCap_backup\CGIAR\Peru\Forage_model_results\marginal_5.2.16.csv"
-    # subbasin_tif = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Peru\boundaries\SWAT_subbasins.tif"
-    # outdir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Peru\summarized_by_zone\livestock_mv_rasters_6.1.16"
-    # # create_mv_rasters(mv_table, subbasin_tif, outdir)
+    mv_table = r"C:\Users\Ginger\Dropbox\NatCap_backup\CGIAR\Peru\Forage_model_results\marginal_5.2.16_ed.csv"
+    subbasin_tif = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Peru\boundaries\SWAT_subbasins.tif"
+    outdir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Peru\summarized_by_zone\livestock_mv_rasters_6.10.16"
+    create_mv_rasters(mv_table, subbasin_tif, outdir)
     
     summarize_mv_by_HRU()
     
