@@ -8,7 +8,7 @@
 # sd5: 60 - 100 cm
 # sd6: 100 - 200 cm
 
-from arcpy import *
+# from arcpy import *
 import os
 import numpy as np
 import math
@@ -23,21 +23,21 @@ import pygeoprocessing.geoprocessing
 CheckOutExtension("Spatial")
 env.overwriteOutput = 1
 
-indir = 'C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/climate_and_soil/soil_grids_extracted'
+# indir = 'C:/Users/Ginger/Documents/NatCap/GIS_local/Kenya_forage/Laikipia_soil_250m'
 
 # outdir = r'C:\Users\Ginger\Documents\NatCap\GIS_local\Unilever\CENTURY_soil\CENTURY_soil.gdb'
-clip_feature = r'C:/Users/Ginger/Dropbox/NatCap_backup/CGIAR/Peru/Spatial_data_study_area/Canete_basin_buffer_2km.shp'
-# clip_feature =  r'C:\Users\Ginger\Documents\NatCap\GIS_local\Laikipia_soil\Laikipia_soil.gdb\Laikipia_clip_area'
-asciidir = r'C:\Users\Ginger\Dropbox\NatCap_backup\Forage_model\Data\Kenya\Soil'
-folder_list1 = ['SNDPPT_1km_glmrk.tif_', 'BLD_glmrk.tif_', 'CLYPPT_1km_glmrk.tif_']
-folder_list2 = ['SLTPPT_1km_glmrk.tif_', 'PHIHO5_1km_glmrk.tif_']
+# clip_feature = r'C:/Users/Ginger/Dropbox/NatCap_backup/CGIAR/Peru/Spatial_data_study_area/Canete_basin_buffer_2km.shp'
+# clip_feature =  r'C:\Users\Ginger\Documents\NatCap\GIS_local\Laikipia_soil_250m\Laikipia_soil_clip'
+# asciidir = r'C:\Users\Ginger\Dropbox\NatCap_backup\Forage_model\Data\Kenya\Soil'
+# folder_list1 = ['SNDPPT_1km_glmrk.tif_', 'BLD_glmrk.tif_', 'CLYPPT_1km_glmrk.tif_']
+# folder_list2 = ['SLTPPT_1km_glmrk.tif_', 'PHIHO5_1km_glmrk.tif_']
 
-output_folder = "soil_grids"
-folder_list_3 = [output_folder]
-outdir = os.path.join(indir, "soil_grids_processed")
-if not os.path.exists(outdir):
-    os.makedirs(outdir)
-    
+# output_folder = "soil_grids"
+# folder_list_3 = [output_folder]
+# outdir = os.path.join(indir, "soil_grids_processed")
+# if not os.path.exists(outdir):
+    # os.makedirs(outdir)
+
 def download_CENTURY_rasters(files_to_retrieve, output_folder):
     try:
         # Log onto ISRIC's ftp site via anonymous user
@@ -80,7 +80,7 @@ def download_CENTURY_rasters(files_to_retrieve, output_folder):
     except:
         print "Error extracting tar files."
         raise
-       
+
 def clip_rasters(folder_list, indir, clip_feature):
     for folder in folder_list:
         env.workspace = os.path.join(indir, folder)
@@ -91,6 +91,44 @@ def clip_rasters(folder_list, indir, clip_feature):
             name = os.path.join(outdir, str(raster))
             extracted.save(name)
 
+def trapezoid_calc(prefix_l, suffix_l, depth_l, indir, outdir):
+    """Calculate the weighted sum of different rasters representing soil
+    depth, according to the depths supplied in the depth_l list.  Prefixes
+    should identify soil components that will be combined across horizons;
+    suffixes should identify horizons.  The order of weights in the weight_l
+    list should correspond to the order of horizons identified by th
+    suffix_l list."""
+    
+    def trapezoid_op(*rasters):
+        """Estimate area under the trapezoid using the trapezoidal rule. The
+        first raster in the list should be delta_x_div_2."""
+        
+        raster_list = list(rasters)
+        sum_ras = np.sum(raster_list[1:] + raster_list[2:-1], axis=0)
+        mult_ras = np.multiply(raster_list[0], sum_ras)
+        mult_ras[raster_list[1] <= 0] = -9999.0
+        return mult_ras
+        
+    base_raster = os.path.join(indir, prefix_l[0] + suffix_l[0] + '.tif')
+    out_pixel_size = pygeoprocessing.geoprocessing.\
+                                    get_cell_size_from_uri(base_raster)
+    delta_x_div_2 = (max(depth_l) - min(depth_l)) / 2.0
+    delta_x_div_2_ras = os.path.join(outdir, 'delta_x_div_2.tif')
+    pygeoprocessing.geoprocessing.new_raster_from_base_uri(base_raster,
+            delta_x_div_2_ras, 'GTiff', -9999.0, gdal.GDT_Float32,
+            fill_value=delta_x_div_2)
+    
+    for prefix in prefix_l:
+        rasters = [os.path.join(indir, prefix + suffix + '.tif') for suffix
+                   in suffix_l]
+        result_ras = os.path.join(outdir, '%s_%d-%d.tif' % (prefix,
+                                                            min(depth_l),
+                                                            max(depth_l)))
+        pygeoprocessing.geoprocessing.vectorize_datasets(rasters,
+                    trapezoid_op, result_ras, gdal.GDT_Float32, -9999.0,
+                    out_pixel_size, "dataset", vectorize_op=False,
+                    datasets_are_pre_aligned=True, dataset_to_bound_index=1)
+    
 def calculate_weighted_sums(prefix_l, suffix_l, weight_l, indir, outdir):
     """Calculate the weighted sum of different rasters representing soil
     horizons, according to the weights supplied in the weight_l list.  Prefixes
@@ -298,10 +336,10 @@ def array_to_raster(wkspace, raster, array, name):
     DefineProjection_management(name, spatial_ref)
 
 
-prefix_l = ['bld_', 'clyppt_', 'sndppt_', 'sltppt_', 'phihox_']
-prefix_l = [str.upper(f) for f in prefix_l]
-suffix_l = ['sd1_M_1km_T263', 'sd2_M_1km_T263'] #, 'sd3', 'sd4', 'sd5', 'sd6']
-weight_l = [5., 10.] # , 15., 30., 40., 100.]
+# prefix_l = ['bld_', 'clyppt_', 'sndppt_', 'sltppt_', 'phihox_']
+# prefix_l = [str.upper(f) for f in prefix_l]
+# suffix_l = ['sd1_M_1km_T263', 'sd2_M_1km_T263'] #, 'sd3', 'sd4', 'sd5', 'sd6']
+# weight_l = [5., 10.] # , 15., 30., 40., 100.]
 
 # clip_rasters(folder_list_3, indir, clip_feature)
 # sum_arr_list = calc_all_sums(prefixes, suffixes, weights, outdir)
@@ -321,7 +359,7 @@ weight_l = [5., 10.] # , 15., 30., 40., 100.]
     # name = prefixes[i] + '0_15_cm.tif'
     # array_to_raster(outdir, raster, arr, name)
 
-calculate_weighted_sums(prefix_l, suffix_l, weight_l, indir, outdir)
+# calculate_weighted_sums(prefix_l, suffix_l, weight_l, indir, outdir)
 
 ## extract values to points
 # env.workspace = outdir
@@ -329,3 +367,11 @@ calculate_weighted_sums(prefix_l, suffix_l, weight_l, indir, outdir)
 # points = 'weather_stations'
 # sa.ExtractMultiValuesToPoints(points, raster_list)
 
+if __name__ == "__main__":
+    indir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Kenya_forage\Laikipia_soil_250m\raw_downloads"
+    outdir = 'C:/Users/Ginger/Documents/NatCap/GIS_local/Kenya_forage/Laikipia_soil_250m/trapezoid_rule_weighted'
+    prefix_l = ['geonode-%s_m_sl' % n for n in ['bldfie', 'clyppt', 'phihox',
+                                                'sltppt', 'sndppt']]
+    suffix_l = ['%d_250m' % n for n in [1, 2, 3]]
+    depth_l = [0, 5, 15]
+    trapezoid_calc(prefix_l, suffix_l, depth_l, indir, outdir)
