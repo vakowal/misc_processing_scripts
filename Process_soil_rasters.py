@@ -105,9 +105,22 @@ def depth_average(prefix_l, suffix_l, depth_l, indir, outdir):
         raster_list = list(rasters)
         sum_ras = np.sum(raster_list, axis=0)
         div_ras = sum_ras / float(len(raster_list))
-        div_ras[raster_list[0] <= 0] = -9999.0
+        div_ras[raster_list[0] <= 0] = 255
+        div_ras[raster_list[0] == 255] = 255
+        return div_ras
+    
+    def div_by_10(raster):
+        div_ras = np.divide(raster, 10.0)
+        div_ras[raster <= 0] = 255
+        div_ras[raster == 255] = 255
         return div_ras
         
+    def div_by_1000(raster):
+        div_ras = np.divide(raster, 1000.0)
+        div_ras[raster <= 0] = 255
+        div_ras[raster == 255] = 255
+        return div_ras
+
     base_raster = os.path.join(indir, prefix_l[0] + suffix_l[0] + '.tif')
     out_pixel_size = pygeoprocessing.geoprocessing.\
                                     get_cell_size_from_uri(base_raster)    
@@ -118,7 +131,23 @@ def depth_average(prefix_l, suffix_l, depth_l, indir, outdir):
                                                             min(depth_l),
                                                             max(depth_l)))
         pygeoprocessing.geoprocessing.vectorize_datasets(rasters,
-                    w_avg_op, result_ras, gdal.GDT_Float32, -9999.0,
+                    w_avg_op, result_ras, gdal.GDT_Float32, 255,
+                    out_pixel_size, "dataset", vectorize_op=False,
+                    datasets_are_pre_aligned=True, dataset_to_bound_index=1)
+        if 'phihox' in prefix:
+            raster_l = [result_ras]
+            result_ras = os.path.join(outdir, '%s_%d-%d_div10.tif' %
+                                      (prefix, min(depth_l), max(depth_l)))
+            pygeoprocessing.geoprocessing.vectorize_datasets(raster_l,
+                    div_by_10, result_ras, gdal.GDT_Float32, 255,
+                    out_pixel_size, "dataset", vectorize_op=False,
+                    datasets_are_pre_aligned=True, dataset_to_bound_index=1)
+        if 'bld' in prefix:
+            raster_l = [result_ras]
+            result_ras = os.path.join(outdir, '%s_%d-%d_div1000.tif' %
+                                      (prefix, min(depth_l), max(depth_l)))
+            pygeoprocessing.geoprocessing.vectorize_datasets(raster_l,
+                    div_by_1000, result_ras, gdal.GDT_Float32, 255,
                     out_pixel_size, "dataset", vectorize_op=False,
                     datasets_are_pre_aligned=True, dataset_to_bound_index=1)
     
@@ -362,7 +391,7 @@ def array_to_raster(wkspace, raster, array, name):
 
 if __name__ == "__main__":
     indir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Kenya_forage\Laikipia_soil_250m\raw_downloads"
-    outdir = 'C:/Users/Ginger/Documents/NatCap/GIS_local/Kenya_forage/Laikipia_soil_250m/trapezoid_rule_weighted'
+    outdir = 'C:/Users/Ginger/Documents/NatCap/GIS_local/Kenya_forage/Laikipia_soil_250m/averaged'
     prefix_l = ['geonode-%s_m_sl' % n for n in ['bldfie', 'clyppt', 'phihox',
                                                 'sltppt', 'sndppt']]
     suffix_l = ['%d_250m' % n for n in [1, 2, 3]]
