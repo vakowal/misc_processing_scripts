@@ -20,8 +20,8 @@ import gzip
 from osgeo import gdal
 import pygeoprocessing.geoprocessing
 
-CheckOutExtension("Spatial")
-env.overwriteOutput = 1
+# CheckOutExtension("Spatial")
+# env.overwriteOutput = 1
 
 # indir = 'C:/Users/Ginger/Documents/NatCap/GIS_local/Kenya_forage/Laikipia_soil_250m'
 
@@ -91,33 +91,26 @@ def clip_rasters(folder_list, indir, clip_feature):
             name = os.path.join(outdir, str(raster))
             extracted.save(name)
 
-def trapezoid_calc(prefix_l, suffix_l, depth_l, indir, outdir):
-    """Calculate the weighted sum of different rasters representing soil
+def depth_average(prefix_l, suffix_l, depth_l, indir, outdir):
+    """Calculate the average of different rasters representing soil
     depth, according to the depths supplied in the depth_l list.  Prefixes
     should identify soil components that will be combined across horizons;
-    suffixes should identify horizons.  The order of weights in the weight_l
-    list should correspond to the order of horizons identified by th
+    suffixes should identify different depths.  The order of weights in the
+    weight_l list should correspond to the order of horizons identified by the
     suffix_l list."""
     
-    def trapezoid_op(*rasters):
-        """Estimate area under the trapezoid using the trapezoidal rule. The
-        first raster in the list should be delta_x_div_2."""
+    def w_avg_op(*rasters):
+        """Calculate the average."""
         
         raster_list = list(rasters)
-        sum_ras = np.sum(raster_list[1:] + raster_list[2:-1], axis=0)
-        mult_ras = np.multiply(raster_list[0], sum_ras)
-        mult_ras[raster_list[1] <= 0] = -9999.0
-        return mult_ras
+        sum_ras = np.sum(raster_list, axis=0)
+        div_ras = sum_ras / float(len(raster_list))
+        div_ras[raster_list[0] <= 0] = -9999.0
+        return div_ras
         
     base_raster = os.path.join(indir, prefix_l[0] + suffix_l[0] + '.tif')
     out_pixel_size = pygeoprocessing.geoprocessing.\
-                                    get_cell_size_from_uri(base_raster)
-    delta_x_div_2 = (max(depth_l) - min(depth_l)) / 2.0
-    delta_x_div_2_ras = os.path.join(outdir, 'delta_x_div_2.tif')
-    pygeoprocessing.geoprocessing.new_raster_from_base_uri(base_raster,
-            delta_x_div_2_ras, 'GTiff', -9999.0, gdal.GDT_Float32,
-            fill_value=delta_x_div_2)
-    
+                                    get_cell_size_from_uri(base_raster)    
     for prefix in prefix_l:
         rasters = [os.path.join(indir, prefix + suffix + '.tif') for suffix
                    in suffix_l]
@@ -125,7 +118,7 @@ def trapezoid_calc(prefix_l, suffix_l, depth_l, indir, outdir):
                                                             min(depth_l),
                                                             max(depth_l)))
         pygeoprocessing.geoprocessing.vectorize_datasets(rasters,
-                    trapezoid_op, result_ras, gdal.GDT_Float32, -9999.0,
+                    w_avg_op, result_ras, gdal.GDT_Float32, -9999.0,
                     out_pixel_size, "dataset", vectorize_op=False,
                     datasets_are_pre_aligned=True, dataset_to_bound_index=1)
     
@@ -374,4 +367,4 @@ if __name__ == "__main__":
                                                 'sltppt', 'sndppt']]
     suffix_l = ['%d_250m' % n for n in [1, 2, 3]]
     depth_l = [0, 5, 15]
-    trapezoid_calc(prefix_l, suffix_l, depth_l, indir, outdir)
+    depth_average(prefix_l, suffix_l, depth_l, indir, outdir)
