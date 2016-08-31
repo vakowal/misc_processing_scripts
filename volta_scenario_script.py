@@ -34,77 +34,74 @@ def merge_rasters(rasters_to_merge, save_as):
             gdal.GDT_Int32, -9999, out_pixel_size, "union",
             dataset_to_align_index=0, vectorize_op=False)
 
-def generate_buf_scenario(lulc_path, buffer_int, buffer_area,
-                          percent_to_convert):
+def generate_buf_scenario(substrate_lulc, buffer_area, percent_to_convert,
+                          result_raster):
     """Main function to generate the flexible buffer area scenario.  Percent
     to convert is the percent of full buffer area that should be converted to
-    riparian buffer."""
-    
-    # inputs will be:
-    # - your lulc with the full buffer coded as the integer buffer_int
-    # - percent of the buffer area to convert
-    # - buffer_area is the area of the buffer in ha.  We should calculate this
-    # inside the script but I don't know how to, so for now we'll calculate by
-    # hand outside the script!
+    riparian buffer. substrate_lulc must contain full buffer area coded as 
+    222."""
     
     # stream cell just inside reservoir inlet was reclassified
     # as the integer 'focal_landcover' (1000)
-    
-    # step 1: calculate area of full buffer
-    # cell_size = pygeoprocessing.geoprocessing.get_cell_size_from_uri(lulc_path)
-    # cell_area = cell_size * cell_size
+
     full_buffer_area = buffer_area  # calculate in hectares
     convertible_area = full_buffer_area * percent_to_convert
     
     replacement_lucode = 1001  # arbitrary integer to identify 'filled' buffer
-    # (make sure this is included in the biophysical table)
-    convertible_landcover = buffer_int  # integer that identifies the full buffer in lulc
+    convertible_landcover = 222  # integer that identifies the full buffer in lulc
     
-    # ASHLEY change these filepaths to point to your inputs
-    # and check all other inputs
     scen_gen_args = {
-            u'aoi_uri': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/SDR_workspace_7.2.16/watershed_results_sdr_default.shp',
+            u'aoi_uri': '',
             u'area_to_convert': str(convertible_area),
-            u'base_lulc_uri': lulc_path,
+            u'base_lulc_uri': substrate_lulc,
             u'convert_farthest_from_edge': False,
             u'convert_nearest_to_edge': True,
             u'convertible_landcover_codes': str(convertible_landcover),
             u'focal_landcover_codes': u'1000',
             u'n_fragmentation_steps': u'1',
             u'replacment_lucode': str(replacement_lucode),
-            u'workspace_dir': u'C:\\Users\\Ginger/Documents/scenario_proximity_workspace',
+            u'workspace_dir': r"C:\Users\Ginger\Desktop\scenario_generator",
     }
     natcap.invest.scenario_gen_proximity.execute(scen_gen_args)
-    # TODO return result of scenario generator
+    scen_result_ras = os.path.join(scen_gen_args['workspace_dir'],
+                                   'nearest_to_edge.tif')
+    
+    # remove areas of stream buffer that were not filled, reclassify filled
+    # buffer as 222
+    def remove_unfilled_buffer(scen_result_ras):
+        scen_result_ras[scen_result_ras == 222] = -9999
+        scen_result_ras[scen_result_ras == 255] = -9999
+        scen_result_ras[scen_result_ras == 1001] = 222
+        return scen_result_ras
+    out_pixel_size = pygeoprocessing.geoprocessing.get_cell_size_from_uri(
+            scen_result_ras)
+    save_as = result_raster
+    pygeoprocessing.geoprocessing.vectorize_datasets(
+            [scen_result_ras], remove_unfilled_buffer, save_as,
+            gdal.GDT_Int32, -9999, out_pixel_size, "union",
+            dataset_to_align_index=0, vectorize_op=False)    
 
 def generate_scenarios_from_table(scenario_csv, data_dir):
     """Put pieces together to create lulc scenarios."""
-    
+    # TODO put all these scenarios in their own folder
     scenario_dict = {'scenario': [], 'scen_name': [], 'lulc_raster': []}
     scen_df = pandas.read_csv(scenario_csv)
     for row in xrange(len(scen_df)):
         scenario_dict['scenario'].append(scen_df.iloc[row].scenario)
         scen_name = scen_df.iloc[row].scen_name
         scenario_dict['scen_name'].append(scen_name)
-        if scen_name == 'perc_stream_buffer':
-            # result_ras = generate_buf_scenario 
-            # (must add fields to table for args to this function)
-            # scenario_dict['lulc_raster'].append(result_ras)
-            # for now:
-            continue
-        else:    
-            merge_l = scen_df.iloc[row].lulc_merge_list.split(', ')
-            rasters_to_merge = [os.path.join(data_dir, f) for f in merge_l]
-            result_ras = os.path.join(data_dir, '%s.tif' % scen_name)
-            merge_rasters(rasters_to_merge, result_ras)
-            scenario_dict['lulc_raster'].append(result_ras)
-    run_df = pandas.data_frame(scenario_dict)        
+        merge_l = scen_df.iloc[row].lulc_merge_list.split(', ')
+        rasters_to_merge = [os.path.join(data_dir, f) for f in merge_l]
+        result_ras = os.path.join(data_dir, '%s.tif' % scen_name)
+        merge_rasters(rasters_to_merge, result_ras)
+        scenario_dict['lulc_raster'].append(result_ras)
+    run_df = pandas.DataFrame(scenario_dict)        
     return run_df
 
 def remove_reservoir_area(sed_export_ras, lulc_ras, watersheds):
     """Reservoirs are coded as bare ground, but we need to remove their
-    contributions to usle and sediment export.  Assume that reservoirs are
-    coded in lulc raster as 999 and 1000."""
+    contributions to usle and sediment export in post-processing.  Assume that
+    reservoirs are coded in lulc raster as 999 and 1000."""
     
     # first set sed export of reservoir extents to 0
     def reclassify_result(result_ras, lulc_ras):
@@ -162,8 +159,8 @@ def remove_reservoir_area(sed_export_ras, lulc_ras, watersheds):
 def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
     
     sdr_args = { 
-        'biophysical_table_path': u'C:/Users/Ginger/Downloads/Ginger_new_data_8.25.16/biophysical_table_MODIS_8.31.16.csv',
-        u'dem_path': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/DEM_strm90m_subset_fill.tif',
+        'biophysical_table_path': r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\biophysical_table_MODIS_8.31.16.csv",
+        u'dem_path': r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\DEM_strm90m_subset_fill.tif",
         u'drainage_path': u'',
         u'erodibility_path': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/erodibility_ISRICSoilGrids250m_7.5arcseconds_subset_prj.tif',
         u'erosivity_path': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/annual_prec_vb_erosivity_proj.tif',
@@ -173,8 +170,8 @@ def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
         u'results_suffix': '',
         u'sdr_max': u'0.8',
         u'threshold_flow_accumulation': '',
-        u'watersheds_path': u'C:/Users/Ginger/Downloads/Volta_data_8.25.16/watershed_results_sdr_merge.shp',
-        u'workspace_dir': 'C:/Users/Ginger/Desktop/test_sdr.8.31.16',
+        u'watersheds_path': '',
+        u'workspace_dir': 'C:/Users/Ginger/Desktop/sdr_8.31.16',
     }
     
     results_dict = {'scen_name': [], 'lulc_raster': [], 'Res_name': [],
@@ -188,8 +185,7 @@ def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
             sdr_args['threshold_flow_accumulation'] = TFA_val
             sdr_args['watersheds_path'] = TFA_dict[TFA_val]
             sdr_args['results_suffix'] = '%s_TFA%d' % (scen_name, TFA_val)
-            # if TFA_val != 25:
-                # natcap.invest.sdr.execute(sdr_args)
+            natcap.invest.sdr.execute(sdr_args)
             
             # post-process: remove contribution of reservoir area to sediment
             # export
@@ -220,18 +216,34 @@ def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
                 results_dict['TFA'].append(TFA_val)
                 num_rows -= 1        
     results_df = pandas.DataFrame(results_dict)
-    results_df.to_csv(results_csv)
-
+    results_df.to_csv(results_csv)       
+    
 def whole_shebang(scenario_csv, data_dir, results_csv):
-    TFA100_watersheds = r"C:\Users\Ginger\Downloads\Ginger_new_data_8.25.16\watersheds_tfa100.shp"
-    TFA25_watersheds = r"C:\Users\Ginger\Downloads\Ginger_new_data_8.25.16\watersheds_tfa25.shp"
+    TFA100_watersheds = os.path.join(data_dir, "watersheds_tfa100.shp")
+    TFA25_watersheds = os.path.join(data_dir, "watersheds_tfa25.shp")
     TFA_dict = {25: TFA25_watersheds, 100: TFA100_watersheds}
+    
+    # generate 50% stream buffer lulc  TODO take percent from scenario_csv
+    print "......... generating partial stream buffer lulc .............."
+    substrate_lulc = os.path.join(data_dir, "stream_buffer_300m_inlet.tif")
+    buffer_area = 3620.72  # ha of stream pixels
+    perc_to_convert = 0.5
+    result_raster = os.path.join(data_dir, "stream_buffer_300m_%.2fperc.tif"
+                                 % perc_to_convert)
+    # generate_buf_scenario(substrate_lulc, buffer_area, perc_to_convert,
+                          # result_raster)
+    
+    # mosaic lulcs for all scenarios
+    print "............. mosaic-ing lulc for all scenarios ................"
     run_df = generate_scenarios_from_table(scenario_csv, data_dir)
+    
+    # launch sdr and collect results
+    print "........... launching sdr, collecting results .................."
     launch_sdr_collect_results(run_df, TFA_dict, results_csv)
     
 if __name__ == '__main__':
-    scenario_csv = 'C:/Users/Ginger/Desktop/scenario_table_8.30.16.csv'
-    data_dir = r"C:\Users\Ginger\Downloads\Ginger_new_data_8.25.16"
-    run_df = generate_scenarios_from_table(scenario_csv, data_dir)
-    print run_df
+    scenario_csv = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\scenario_table_8.31.16.csv"
+    data_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16"
+    results_csv = "C:\Users\Ginger\Desktop\scenario_results_8.31.16.csv"
+    whole_shebang(scenario_csv, data_dir, results_csv)
     
