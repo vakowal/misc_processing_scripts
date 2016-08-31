@@ -3,6 +3,7 @@ Volta SDR: generate scenarios, run model, collect results.
 """
 
 import os
+import numpy as np
 import natcap.invest.scenario_gen_proximity
 import natcap.invest.sdr
 from osgeo import gdal
@@ -83,8 +84,8 @@ def generate_scenarios_from_table(scenario_csv, data_dir):
     scen_df = pandas.read_csv(scenario_csv)
     for row in xrange(len(scen_df)):
         scenario_dict['scenario'].append(scen_df.iloc[row].scenario)
-        scen_name = scen_df.iloc[row].comment
-        scenario_dict['scen_name'].append(comment)
+        scen_name = scen_df.iloc[row].scen_name
+        scenario_dict['scen_name'].append(scen_name)
         if scen_name == 'perc_stream_buffer':
             # result_ras = generate_buf_scenario 
             # (must add fields to table for args to this function)
@@ -92,9 +93,9 @@ def generate_scenarios_from_table(scenario_csv, data_dir):
             # for now:
             continue
         else:    
-            merge_l = scen_df.iloc[row].lulc_merge_list
+            merge_l = scen_df.iloc[row].lulc_merge_list.split(', ')
             rasters_to_merge = [os.path.join(data_dir, f) for f in merge_l]
-            result_ras = os.path.join(data_dir, '%d.tif' % scen_name)
+            result_ras = os.path.join(data_dir, '%s.tif' % scen_name)
             merge_rasters(rasters_to_merge, result_ras)
             scenario_dict['lulc_raster'].append(result_ras)
     run_df = pandas.data_frame(scenario_dict)        
@@ -167,7 +168,7 @@ def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
         u'erodibility_path': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/erodibility_ISRICSoilGrids250m_7.5arcseconds_subset_prj.tif',
         u'erosivity_path': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/annual_prec_vb_erosivity_proj.tif',
         u'ic_0_param': u'0.5',
-        u'k_param': u'2',
+        u'k_param': u'3',
         u'lulc_path': '',
         u'results_suffix': '',
         u'sdr_max': u'0.8',
@@ -227,20 +228,10 @@ def whole_shebang(scenario_csv, data_dir, results_csv):
     TFA_dict = {25: TFA25_watersheds, 100: TFA100_watersheds}
     run_df = generate_scenarios_from_table(scenario_csv, data_dir)
     launch_sdr_collect_results(run_df, TFA_dict, results_csv)
-
-def test_sdr_run():
-    test_run_df = r"C:\Users\Ginger\Downloads\test_run_df.csv"
-    TFA100_watersheds = r"C:\Users\Ginger\Downloads\Ginger_new_data_8.25.16\watersheds_tfa100.shp"
-    TFA25_watersheds = r"C:\Users\Ginger\Downloads\Ginger_new_data_8.25.16\watersheds_tfa25.shp"
-    TFA_dict = {25: TFA25_watersheds, 100: TFA100_watersheds}
-    run_df = pandas.read_csv(test_run_df)
-    results_csv = 'C:/Users/Ginger/Desktop/scenario_results_8.30.16.csv'
-    launch_sdr_collect_results(run_df, TFA_dict, results_csv)
     
 if __name__ == '__main__':
-    # scenario_csv = 'C:/Users/Ginger/Desktop/scenario_table_8.30.16.csv'
-    # data_dir = 'C:/Users/Ginger/Desktop/Volta_data'
-    # results_csv = 'C:/Users/Ginger/Desktop/scenario_results_8.30.16.csv'
-    # whole_shebang(scenario_csv, data_dir, results_csv)
-    test_sdr_run()
+    scenario_csv = 'C:/Users/Ginger/Desktop/scenario_table_8.30.16.csv'
+    data_dir = r"C:\Users\Ginger\Downloads\Ginger_new_data_8.25.16"
+    run_df = generate_scenarios_from_table(scenario_csv, data_dir)
+    print run_df
     
