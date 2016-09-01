@@ -25,6 +25,7 @@ def merge_rasters(rasters_to_merge, save_as):
         result_raster = np.full((raster_list[0].shape), -9999)
         # assume nodata (should not be copied) is 0
         for raster in raster_list:
+            raster[raster == 255] = 0
             np.copyto(result_raster, raster, where=raster > 0)
         return result_raster
     
@@ -97,8 +98,9 @@ def generate_scenarios_from_table(scenario_csv, data_dir):
         merge_l = scen_df.iloc[row].lulc_merge_list.split(', ')
         rasters_to_merge = [os.path.join(data_dir, f) for f in merge_l]
         result_ras = os.path.join(scenario_lulc_folder, '%s.tif' % scen_name)
-        merge_rasters(rasters_to_merge, result_ras)
         scenario_dict['lulc_raster'].append(result_ras)
+        if not os.path.exists(result_ras):
+            merge_rasters(rasters_to_merge, result_ras)
     run_df = pandas.DataFrame(scenario_dict)
     now_str = datetime.now().strftime("%Y-%m-%d--%H_%M_%S")
     run_df.to_csv(os.path.join(data_dir, 'run_table_%s.csv' % now_str),
@@ -172,7 +174,7 @@ def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
         u'erodibility_path': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/erodibility_ISRICSoilGrids250m_7.5arcseconds_subset_prj.tif',
         u'erosivity_path': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/annual_prec_vb_erosivity_proj.tif',
         u'ic_0_param': u'0.5',
-        u'k_param': u'3',
+        u'k_param': '3',
         u'lulc_path': '',
         u'results_suffix': '',
         u'sdr_max': u'0.8',
@@ -238,8 +240,9 @@ def whole_shebang(scenario_csv, data_dir, results_csv):
         result_raster = os.path.join(data_dir,
                                      "stream_buffer_300m_%.2fperc.tif"
                                      % perc_to_convert)
-        generate_buf_scenario(substrate_lulc, buffer_area, perc_to_convert,
-                              result_raster)
+        if not os.path.exists(result_raster):
+            generate_buf_scenario(substrate_lulc, buffer_area, perc_to_convert,
+                                  result_raster)
     # make sure that result_raster is listed in scenario_csv
     
     # mosaic lulcs for all scenarios
@@ -255,4 +258,3 @@ if __name__ == '__main__':
     data_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16"
     results_csv = "C:\Users\Ginger\Desktop\scenario_results_9.1.16.csv"
     whole_shebang(scenario_csv, data_dir, results_csv)
-    
