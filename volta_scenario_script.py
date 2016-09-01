@@ -101,7 +101,8 @@ def generate_scenarios_from_table(scenario_csv, data_dir):
         scenario_dict['lulc_raster'].append(result_ras)
     run_df = pandas.DataFrame(scenario_dict)
     now_str = datetime.now().strftime("%Y-%m-%d--%H_%M_%S")
-    run_df.to_csv('run_table_%s.csv' % now_str, index=False)
+    run_df.to_csv(os.path.join(data_dir, 'run_table_%s.csv' % now_str),
+                  index=False)
     return run_df
 
 def remove_reservoir_area(sed_export_ras, lulc_ras, watersheds):
