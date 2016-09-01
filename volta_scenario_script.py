@@ -10,6 +10,7 @@ from osgeo import gdal
 from osgeo import ogr
 import pygeoprocessing.geoprocessing
 import pandas
+from datetime import datetime
 from arcpy import *
 
 def merge_rasters(rasters_to_merge, save_as):
@@ -83,7 +84,10 @@ def generate_buf_scenario(substrate_lulc, buffer_area, percent_to_convert,
 
 def generate_scenarios_from_table(scenario_csv, data_dir):
     """Put pieces together to create lulc scenarios."""
-    # TODO put all these scenarios in their own folder
+    
+    scenario_lulc_folder = os.path.join(data_dir, 'scenario_lulc')
+    if not os.path.exists(scenario_lulc_folder):
+        os.makedirs(scenario_lulc_folder)
     scenario_dict = {'scenario': [], 'scen_name': [], 'lulc_raster': []}
     scen_df = pandas.read_csv(scenario_csv)
     for row in xrange(len(scen_df)):
@@ -92,10 +96,12 @@ def generate_scenarios_from_table(scenario_csv, data_dir):
         scenario_dict['scen_name'].append(scen_name)
         merge_l = scen_df.iloc[row].lulc_merge_list.split(', ')
         rasters_to_merge = [os.path.join(data_dir, f) for f in merge_l]
-        result_ras = os.path.join(data_dir, '%s.tif' % scen_name)
+        result_ras = os.path.join(scenario_lulc_folder, '%s.tif' % scen_name)
         merge_rasters(rasters_to_merge, result_ras)
         scenario_dict['lulc_raster'].append(result_ras)
-    run_df = pandas.DataFrame(scenario_dict)        
+    run_df = pandas.DataFrame(scenario_dict)
+    now_str = datetime.now().strftime("%Y-%m-%d--%H_%M_%S")
+    run_df.to_csv('run_table_%s.csv' % now_str, index=False)
     return run_df
 
 def remove_reservoir_area(sed_export_ras, lulc_ras, watersheds):
@@ -185,20 +191,20 @@ def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
             sdr_args['threshold_flow_accumulation'] = TFA_val
             sdr_args['watersheds_path'] = TFA_dict[TFA_val]
             sdr_args['results_suffix'] = '%s_TFA%d' % (scen_name, TFA_val)
-            natcap.invest.sdr.execute(sdr_args)
-            
-            # post-process: remove contribution of reservoir area to sediment
-            # export
-            sed_export_ras = os.path.join(sdr_args['workspace_dir'],
-                                          'sed_export_%s.tif' %
-                                          sdr_args['results_suffix'])
-            lulc_ras = lulc_raster
             watersheds = os.path.join(sdr_args['workspace_dir'],
                                       'watershed_results_sdr_%s.shp' %
                                       sdr_args['results_suffix'])
-            remove_reservoir_area(sed_export_ras, lulc_ras, watersheds)
             corrected_summary_shp = os.path.join(os.path.dirname(watersheds), 
                               '%s_cor.shp' % os.path.basename(watersheds)[:-4])
+            if not os.path.isfile(corrected_summary_shp):
+                natcap.invest.sdr.execute(sdr_args)
+            
+                # post-process: remove contribution of reservoir area to sediment
+                # export
+                sed_export_ras = os.path.join(sdr_args['workspace_dir'],
+                                              'sed_export_%s.tif' %
+                                              sdr_args['results_suffix'])
+                remove_reservoir_area(sed_export_ras, lulc_raster, watersheds)
             fields = ['ws_id', 'sed_expcor', 'Res_name']
             num_rows = 0
             with da.SearchCursor(corrected_summary_shp, fields) as cursor:
@@ -216,7 +222,7 @@ def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
                 results_dict['TFA'].append(TFA_val)
                 num_rows -= 1        
     results_df = pandas.DataFrame(results_dict)
-    results_df.to_csv(results_csv)       
+    results_df.to_csv(results_csv, index=False)       
     
 def whole_shebang(scenario_csv, data_dir, results_csv):
     TFA100_watersheds = os.path.join(data_dir, "watersheds_tfa100.shp")
@@ -227,11 +233,13 @@ def whole_shebang(scenario_csv, data_dir, results_csv):
     print "......... generating partial stream buffer lulc .............."
     substrate_lulc = os.path.join(data_dir, "stream_buffer_300m_inlet.tif")
     buffer_area = 3620.72  # ha of stream pixels
-    perc_to_convert = 0.5
-    result_raster = os.path.join(data_dir, "stream_buffer_300m_%.2fperc.tif"
-                                 % perc_to_convert)
-    # generate_buf_scenario(substrate_lulc, buffer_area, perc_to_convert,
-                          # result_raster)
+    for perc_to_convert in [0.1, 0.25, 0.5]:
+        result_raster = os.path.join(data_dir,
+                                     "stream_buffer_300m_%.2fperc.tif"
+                                     % perc_to_convert)
+        generate_buf_scenario(substrate_lulc, buffer_area, perc_to_convert,
+                              result_raster)
+    # make sure that result_raster is listed in scenario_csv
     
     # mosaic lulcs for all scenarios
     print "............. mosaic-ing lulc for all scenarios ................"
@@ -242,8 +250,8 @@ def whole_shebang(scenario_csv, data_dir, results_csv):
     launch_sdr_collect_results(run_df, TFA_dict, results_csv)
     
 if __name__ == '__main__':
-    scenario_csv = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\scenario_table_8.31.16.csv"
+    scenario_csv = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\scenario_table_9.1.16.csv"
     data_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16"
-    results_csv = "C:\Users\Ginger\Desktop\scenario_results_8.31.16.csv"
+    results_csv = "C:\Users\Ginger\Desktop\scenario_results_9.1.16.csv"
     whole_shebang(scenario_csv, data_dir, results_csv)
     
