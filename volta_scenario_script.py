@@ -11,7 +11,6 @@ from osgeo import ogr
 import pygeoprocessing.geoprocessing
 import pandas
 from datetime import datetime
-from arcpy import *
 
 def merge_rasters(rasters_to_merge, save_as):
     """Mosaic positive values from several rasters of the same shape together.
@@ -225,28 +224,26 @@ def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
             if not os.path.isfile(corrected_summary_shp):
                 natcap.invest.sdr.execute(sdr_args)
             
-                # post-process: remove contribution of reservoir area to sediment
-                # export
+                # post-process: remove contribution of reservoir area to
+                # sediment export
                 sed_export_ras = os.path.join(sdr_args['workspace_dir'],
                                               'sed_export_%s.tif' %
                                               sdr_args['results_suffix'])
                 remove_reservoir_area(sed_export_ras, lulc_raster, watersheds)
             fields = ['ws_id', 'sed_expcor', 'Res_name']
             num_rows = 0
-            with da.SearchCursor(corrected_summary_shp, fields) as cursor:
-                for row in cursor:
-                    ws_id = row[0]
-                    sed_export = row[1]
-                    res_name = row[2]
-                    results_dict['ws_id'].append(ws_id)
-                    results_dict['sediment_export'].append(sed_export)
-                    results_dict['Res_name'].append(res_name)
-                    num_rows += 1
-            while num_rows > 0:
+            shpf = ogr.Open(corrected_summary_shp)
+            layer = shpf.GetLayer(0)
+            num_features = layer.GetFeatureCount()
+            for i in range(num_features):
+                feature = layer.GetFeature(i)
+                results_dict['ws_id'].append(feature.GetField("ws_id"))
+                results_dict['sediment_export'].append(
+                                        feature.GetField("sed_expcor"))
+                results_dict['Res_name'].append(feature.GetField("Res_name"))
                 results_dict['scen_name'].append(scen_name)
                 results_dict['lulc_raster'].append(lulc_raster)
                 results_dict['TFA'].append(TFA_val)
-                num_rows -= 1        
     results_df = pandas.DataFrame(results_dict)
     results_df.to_csv(results_csv, index=False)       
     
@@ -278,6 +275,6 @@ if __name__ == '__main__':
     scenario_csv = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\scenario_table_9.1.16.csv"
     data_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16"
     results_csv = "C:\Users\Ginger\Desktop\scenario_results_9.2.16.csv"
-    launch_buffer_creation(data_dir)
+    # launch_buffer_creation(data_dir)
     whole_shebang(scenario_csv, data_dir, results_csv)
     
