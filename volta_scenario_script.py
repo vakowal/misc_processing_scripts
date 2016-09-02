@@ -35,53 +35,76 @@ def merge_rasters(rasters_to_merge, save_as):
             rasters_to_merge, merge_op, save_as,
             gdal.GDT_Int32, -9999, out_pixel_size, "union",
             dataset_to_align_index=0, vectorize_op=False)
-
-def generate_buf_scenario(substrate_lulc, buffer_area, percent_to_convert,
+  
+def generate_buf_scenario(substrate_lulc, aoi_shp, aoi_dir, percent_to_convert,
                           result_raster):
     """Main function to generate the flexible buffer area scenario.  Percent
     to convert is the percent of full buffer area that should be converted to
-    riparian buffer. substrate_lulc must contain full buffer area coded as 
-    222."""
+    riparian buffer. aoi_shp is a path to a shapefile containing all
+    watersheds; aoi_dir is a directory that contains separate shapefiles for
+    each watershed.  substrate_lulc must contain full buffer area
+    coded as 222."""
     
     # stream cell just inside reservoir inlet was reclassified
     # as the integer 'focal_landcover' (1000)
-
-    full_buffer_area = buffer_area  # calculate in hectares
-    convertible_area = full_buffer_area * percent_to_convert
+                
+    # get area within each aoi of pixel type 222
+    # first: reclassify to keep just pixel type 222
+    ras_222 = os.path.join(os.path.dirname(substrate_lulc), '222_only.tif')
+    if not os.path.exists(ras_222):
+        def reclassify_to_222(substrate_lulc):
+            result_raster = np.full((substrate_lulc.shape), 255, dtype=np.int)
+            np.copyto(result_raster, substrate_lulc,
+                      where=substrate_lulc == 222)
+            return result_raster
+        out_pixel_size = pygeoprocessing.geoprocessing.get_cell_size_from_uri(
+            substrate_lulc)
+        pygeoprocessing.geoprocessing.vectorize_datasets(
+                [substrate_lulc], reclassify_to_222, ras_222,
+                gdal.GDT_Int32, 255, out_pixel_size, "union",
+                dataset_to_align_index=0, vectorize_op=False)
+    sum_dict = pygeoprocessing.aggregate_raster_values_uri(
+                                   ras_222, aoi_shp, 'ws_id').total
+    area_dict = {key: (sum_dict[key] / 222) * 0.865994 for key in
+                 sum_dict.keys()}
+    result_list = []
+    for ws_id in area_dict.keys():
+        aoi = os.path.join(aoi_dir, 'ws_id_%d.shp' % ws_id)
+        convertible_area = percent_to_convert * area_dict[ws_id]
+        scen_gen_args = {
+                u'aoi_uri': aoi,
+                u'area_to_convert': str(convertible_area),
+                u'base_lulc_uri': substrate_lulc,
+                u'convert_farthest_from_edge': False,
+                u'convert_nearest_to_edge': True,
+                u'convertible_landcover_codes': '222',
+                u'focal_landcover_codes': u'1000',
+                u'n_fragmentation_steps': u'1',
+                u'replacment_lucode': '1001',
+                u'workspace_dir': r"C:\Users\Ginger\Desktop\scenario_generator",
+        }
+        natcap.invest.scenario_gen_proximity.execute(scen_gen_args)
+        scen_result_ras = os.path.join(scen_gen_args['workspace_dir'],
+                                       'nearest_to_edge.tif')
     
-    replacement_lucode = 1001  # arbitrary integer to identify 'filled' buffer
-    convertible_landcover = 222  # integer that identifies the full buffer in lulc
-    
-    scen_gen_args = {
-            u'aoi_uri': '',
-            u'area_to_convert': str(convertible_area),
-            u'base_lulc_uri': substrate_lulc,
-            u'convert_farthest_from_edge': False,
-            u'convert_nearest_to_edge': True,
-            u'convertible_landcover_codes': str(convertible_landcover),
-            u'focal_landcover_codes': u'1000',
-            u'n_fragmentation_steps': u'1',
-            u'replacment_lucode': str(replacement_lucode),
-            u'workspace_dir': r"C:\Users\Ginger\Desktop\scenario_generator",
-    }
-    natcap.invest.scenario_gen_proximity.execute(scen_gen_args)
-    scen_result_ras = os.path.join(scen_gen_args['workspace_dir'],
-                                   'nearest_to_edge.tif')
-    
-    # remove areas of stream buffer that were not filled, reclassify filled
-    # buffer as 222
-    def remove_unfilled_buffer(scen_result_ras):
-        scen_result_ras[scen_result_ras == 222] = -9999
-        scen_result_ras[scen_result_ras == 255] = -9999
-        scen_result_ras[scen_result_ras == 1001] = 222
-        return scen_result_ras
-    out_pixel_size = pygeoprocessing.geoprocessing.get_cell_size_from_uri(
-            scen_result_ras)
-    save_as = result_raster
-    pygeoprocessing.geoprocessing.vectorize_datasets(
-            [scen_result_ras], remove_unfilled_buffer, save_as,
-            gdal.GDT_Int32, -9999, out_pixel_size, "union",
-            dataset_to_align_index=0, vectorize_op=False)    
+        # remove areas of stream buffer that were not filled, reclassify filled
+        # buffer as 222
+        def remove_unfilled_buffer(scen_result_ras):
+            scen_result_ras[scen_result_ras == 222] = -9999
+            scen_result_ras[scen_result_ras == 255] = -9999
+            scen_result_ras[scen_result_ras == 1001] = 222
+            return scen_result_ras
+        out_pixel_size = pygeoprocessing.geoprocessing.get_cell_size_from_uri(
+                scen_result_ras)
+        save_as = os.path.join(scen_gen_args['workspace_dir'],
+                               'buf_cor_%d.tif' % ws_id)
+        pygeoprocessing.geoprocessing.vectorize_datasets(
+                [scen_result_ras], remove_unfilled_buffer, save_as,
+                gdal.GDT_Int32, -9999, out_pixel_size, "union",
+                dataset_to_align_index=0, vectorize_op=False)
+        result_list.append(save_as)
+    # mosaic all constituent pieces together
+    merge_rasters(result_list, result_raster)
 
 def generate_scenarios_from_table(scenario_csv, data_dir):
     """Put pieces together to create lulc scenarios."""
@@ -232,19 +255,6 @@ def whole_shebang(scenario_csv, data_dir, results_csv):
     TFA25_watersheds = os.path.join(data_dir, "watersheds_tfa25.shp")
     TFA_dict = {25: TFA25_watersheds, 100: TFA100_watersheds}
     
-    # generate 50% stream buffer lulc  TODO take percent from scenario_csv
-    print "......... generating partial stream buffer lulc .............."
-    substrate_lulc = os.path.join(data_dir, "stream_buffer_300m_inlet.tif")
-    buffer_area = 3620.72  # ha of stream pixels
-    for perc_to_convert in [0.1, 0.25, 0.5]:
-        result_raster = os.path.join(data_dir,
-                                     "stream_buffer_300m_%.2fperc.tif"
-                                     % perc_to_convert)
-        if not os.path.exists(result_raster):
-            generate_buf_scenario(substrate_lulc, buffer_area, perc_to_convert,
-                                  result_raster)
-    # make sure that result_raster is listed in scenario_csv
-    
     # mosaic lulcs for all scenarios
     print "............. mosaic-ing lulc for all scenarios ................"
     run_df = generate_scenarios_from_table(scenario_csv, data_dir)
@@ -252,9 +262,22 @@ def whole_shebang(scenario_csv, data_dir, results_csv):
     # launch sdr and collect results
     print "........... launching sdr, collecting results .................."
     launch_sdr_collect_results(run_df, TFA_dict, results_csv)
-    
+
+def launch_buffer_creation(data_dir):
+    substrate_lulc = os.path.join(data_dir, "stream_buffer_300m_inlet.tif")
+    aoi_shp = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\all_watersheds.shp"
+    aoi_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\watersheds_separate"
+    for percent_to_convert in [0.1, 0.25, 0.5]:
+        result_raster = os.path.join(data_dir,
+                                     'stream_buffer_300m_%.2fperc.tif' %
+                                     percent_to_convert)
+        generate_buf_scenario(substrate_lulc, aoi_shp, aoi_dir,
+                              percent_to_convert, result_raster)
+                          
 if __name__ == '__main__':
     scenario_csv = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\scenario_table_9.1.16.csv"
     data_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16"
-    results_csv = "C:\Users\Ginger\Desktop\scenario_results_9.1.16.csv"
+    results_csv = "C:\Users\Ginger\Desktop\scenario_results_9.2.16.csv"
+    launch_buffer_creation(data_dir)
     whole_shebang(scenario_csv, data_dir, results_csv)
+    
