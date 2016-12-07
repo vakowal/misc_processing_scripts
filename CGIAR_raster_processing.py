@@ -17,19 +17,6 @@ highlands = "C:/Users/Ginger/Dropbox/NatCap_backup/CGIAR/Peru/Spatial_data_study
 graz_areas = "C:/Users/Ginger/Dropbox/NatCap_backup/CGIAR/Peru/Spatial_data_study_area/Estimated_grazing_areas.shp"
 clim_folder = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/climate_and_soil/Worldclim_current"
 soil_folder = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/climate_and_soil/soil_grids_processed"
-
-def translate_solution(solution_table, HRU_raster, raster_out_uri):
-    """"""
-    
-    out_datatype = 3
-    source_dataset = gdal.Open(HRU_raster)
-    band = source_dataset.GetRasterBand(1)
-    out_nodata = band.GetNoDataValue()
-    
-    sol_df = pd.read_csv(solution_table)
-    value_map = {row[3]: row[2] for row in sol_df.itertuples()}
-    pygeoprocessing.geoprocessing.reclassify_dataset_uri(
-               HRU_raster, value_map, raster_out_uri, out_datatype, out_nodata)
     
 def create_mv_rasters(mv_table, subbasin_tif, outdir):
     """make marginal value rasters from livestock model that can be summarized
@@ -56,7 +43,7 @@ def create_mv_rasters(mv_table, subbasin_tif, outdir):
                 if value_map[subbasin] == 'failed':
                     value_map[subbasin] = out_nodata
                 else:
-                    value_map[subbasin] = float(value_map[subbasin]) * 0.81
+                    value_map[subbasin] = float(value_map[subbasin]) * 0.81  # 0.81 = cell size in ha
             except KeyError:
                 value_map[subbasin] = out_nodata
         raster_out_uri = os.path.join(outdir, 'mv_%s_%s.tif' % 
@@ -68,12 +55,12 @@ def create_mv_rasters(mv_table, subbasin_tif, outdir):
 def summarize_mv_by_HRU():
     HRU_zones = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Peru\Other_spatial_data\HRU_priority_FESC_RYEG.tif"
     zero_raster = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Peru\Other_spatial_data\HRU_priority_FESC_RYEG_0.tif"
-    objectives = ['swybeta1']  #['livestock' , 'sdr', 'swy']
+    objectives = ['sdr', 'sdrlit', 'swy', 'swybeta1', 'swylit', 'swylitbeta1']
     for obj in objectives:
-        raster_folder = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_mv_rasters_11.8.16" % obj
+        raster_folder = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_mv_rasters_11.23.16" % obj
         arcpy.env.workspace = raster_folder
         mv_rasters = arcpy.ListRasters()
-        save_dir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_mv_rasters_mosaic_11.8.16" % obj
+        save_dir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_mv_rasters_mosaic_11.23.16" % obj
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
         for raster in mv_rasters:
@@ -84,11 +71,11 @@ def summarize_mv_by_HRU():
                                                "LAST", "")
         arcpy.env.workspace = save_dir
         mv_rasters = arcpy.ListRasters()
-        HRU_outdir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_summary_tables_by_HRU_11.8.16_2" % obj
+        HRU_outdir = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_summary_tables_by_HRU_11.23.16" % obj
         if not os.path.exists(HRU_outdir):
             os.makedirs(HRU_outdir)
         summarize_by_zone(mv_rasters, HRU_zones, HRU_outdir)
-        summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_mv_by_HRU_11.8.16_2.csv" % obj
+        summary_csv = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/summarized_by_zone/%s_mv_by_HRU_11.23.16.csv" % obj
         combine_tables(HRU_outdir, summary_csv)
 
 def extract_by_mask(folder, mask, outdir):
@@ -258,10 +245,12 @@ def process_climate_rasters(climate_dir):
                 [in_raster], div_by_ten, out_name,
                 gdal.GDT_Float32, nodata, out_pixel_size, "union",
                 dataset_to_align_index=0, assert_datasets_projected=False,
-                vectorize_op=False, datasets_are_pre_aligned=True)
-    
-    
+                vectorize_op=False, datasets_are_pre_aligned=True)     
+        
 if __name__ == "__main__":
+    lulc = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Peru\Land_Use\LULC_subbasin_int32.tif"
+    # reclassify_solution_wrapper(lulc)
+    
     # arcpy.env.overwriteOutput = 1
     
     # pH_raster = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/climate_and_soil/soil_grids_processed/PHIHOX_weighted_sum_0-15.tif"
@@ -307,9 +296,9 @@ if __name__ == "__main__":
     # # combine_tables(soil_outdir, summary_csv)
     
     # ## create livestock marginal value tables and summarize them by SWAT HRU
-    mv_table = r"C:\Users\Ginger\Dropbox\NatCap_backup\CGIAR\Peru\Forage_model_results\marginal_table_10.18.16.csv"
+    mv_table = r"C:\Users\Ginger\Dropbox\NatCap_backup\CGIAR\Peru\Forage_model_results\marginal_table_8.25.16.csv"
     subbasin_tif = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Peru\boundaries\SWAT_subbasins.tif"
-    outdir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Peru\summarized_by_zone\livestock_mv_rasters_11.8.16"
+    outdir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Peru\summarized_by_zone\livestocklit_mv_rasters_11.8.16"
     # create_mv_rasters(mv_table, subbasin_tif, outdir)
     
     summarize_mv_by_HRU()
