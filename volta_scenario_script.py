@@ -76,9 +76,9 @@ def generate_buf_scenario(substrate_lulc, aoi_shp, aoi_dir, percent_to_convert,
         aoi = os.path.join(aoi_dir, 'ws_id_%d.shp' % ws_id)
         convertible_area = percent_to_convert * area_dict[ws_id]
         scen_gen_args = {
-                u'aoi_uri': aoi,
+                u'aoi_path': aoi,
                 u'area_to_convert': str(convertible_area),
-                u'base_lulc_uri': substrate_lulc,
+                u'base_lulc_path': substrate_lulc,
                 u'convert_farthest_from_edge': False,
                 u'convert_nearest_to_edge': True,
                 u'convertible_landcover_codes': '222',
@@ -134,12 +134,11 @@ def generate_scenarios_from_table(scenario_csv, data_dir):
                   index=False)
     return run_df
 
-def remove_reservoir_area(sed_export_ras, lulc_ras, watersheds):
+def remove_reservoir_area(sed_export_ras, usle_ras, lulc_ras, watersheds):
     """Reservoirs are coded as bare ground, but we need to remove their
     contributions to usle and sediment export in post-processing.  Assume that
     reservoirs are coded in lulc raster as 999 and 1000."""
     
-    # first set sed export of reservoir extents to 0
     def reclassify_result(result_ras, lulc_ras):
         result_ras[lulc_ras == 999] = 0
         result_ras[lulc_ras == 1000] = 0
@@ -147,11 +146,22 @@ def remove_reservoir_area(sed_export_ras, lulc_ras, watersheds):
     
     out_pixel_size = pygeoprocessing.geoprocessing.get_cell_size_from_uri(
             sed_export_ras)
+    
+    # set sediment export of reservoir extents to 0
     sed_export_cor = os.path.join(os.path.dirname(sed_export_ras), 
                                   '%s_cor.tif' % 
                                   os.path.basename(sed_export_ras)[:-4])
     pygeoprocessing.geoprocessing.vectorize_datasets(
             [sed_export_ras, lulc_ras], reclassify_result, sed_export_cor,
+            gdal.GDT_Float32, -1, out_pixel_size, "union",
+            dataset_to_align_index=0, vectorize_op=False)
+    
+    # set usle of reservoir extents to 0
+    usle_cor = os.path.join(os.path.dirname(usle_ras), 
+                                  '%s_cor.tif' % 
+                                  os.path.basename(usle_ras)[:-4])
+    pygeoprocessing.geoprocessing.vectorize_datasets(
+            [usle_ras, lulc_ras], reclassify_result, usle_cor,
             gdal.GDT_Float32, -1, out_pixel_size, "union",
             dataset_to_align_index=0, vectorize_op=False)    
     
@@ -159,6 +169,8 @@ def remove_reservoir_area(sed_export_ras, lulc_ras, watersheds):
     field_summaries = {
         'sed_expcor': pygeoprocessing.geoprocessing.aggregate_raster_values_uri(
                                     sed_export_cor, watersheds, 'ws_id').total,
+        'usle_totco': pygeoprocessing.geoprocessing.aggregate_raster_values_uri(
+                                    usle_cor, watersheds, 'ws_id').total,
         }
     esri_driver = ogr.GetDriverByName('ESRI Shapefile')
     original_datasource = ogr.Open(watersheds)
@@ -193,28 +205,31 @@ def remove_reservoir_area(sed_export_ras, lulc_ras, watersheds):
     datasource_copy.Destroy()
         
 def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
-    kb_ic_list = [(10, 0.5)]  # [(3, 0.5)]  # [(5, 0.5), (10, 0.5), (2, 0.4), (3, 0.4), (2, 0.3), (3, 0.3),
-                  # (1, 0.4), (4, 0.4), (5, 0.4), (1, 0.3), (4, 0.3), (5, 0.3)]
+    kb_ic_list = [(10, -0.3), (10, -0.5), (10, -1.)]
+    
+    # u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/erosivity_30s_prj_ex.tif'
+    # u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/annual_prec_vb_erosivity_proj.tif'
+    
     
     sdr_args = { 
-        'biophysical_table_path': r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\biophysical_table_MODIS_8.31.16.csv",
+        'biophysical_table_path': r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\biophysical_table_MODIS_12.20.16.csv",
         u'dem_path': r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\DEM_strm90m_subset_fill.tif",
         u'drainage_path': u'',
         u'erodibility_path': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/erodibility_ISRICSoilGrids250m_7.5arcseconds_subset_prj.tif',
-        u'erosivity_path': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/annual_prec_vb_erosivity_proj.tif',
+        u'erosivity_path': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/erosivity_30s_prj_ex.tif',
         u'ic_0_param': '',
         u'k_param': '',
         u'lulc_path': '',
         u'results_suffix': '',
-        u'sdr_max': u'0.8',
+        u'sdr_max': u'1.0',
         u'threshold_flow_accumulation': '',
         u'watersheds_path': '',
-        u'workspace_dir': 'C:/Users/Ginger/Desktop/sdr_8.31.16',
+        u'workspace_dir': 'C:/Users/Ginger/Desktop/sdr_12.20.16_erosivity_30s',
     }
     
     results_dict = {'scen_name': [], 'lulc_raster': [], 'Res_name': [],
-                    'TFA': [], 'ws_id': [], 'sediment_export': [], 
-                    'kb': [], 'ic_0': []}
+                    'TFA': [], 'ws_id': [], 'sediment_export': [],
+                    'usle_tot': [], 'kb': [], 'ic_0': []}
     for kb, ic0 in kb_ic_list:
         sdr_args['k_param'] = kb
         sdr_args['ic_0_param'] = ic0
@@ -232,21 +247,23 @@ def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
                                           sdr_args['results_suffix'])
                 corrected_summary_shp = os.path.join(os.path.dirname(watersheds), 
                                   '%s_cor.shp' % os.path.basename(watersheds)[:-4])
-                if not os.path.isfile(corrected_summary_shp):
-                    natcap.invest.sdr.execute(sdr_args)
+                # if not os.path.isfile(corrected_summary_shp):
+                natcap.invest.sdr.execute(sdr_args)
                 
                 # post-process: remove contribution of reservoir area to
-                # sediment export
+                # sediment export and usle
                 sed_export_ras = os.path.join(sdr_args['workspace_dir'],
                                               'sed_export_%s.tif' %
                                               sdr_args['results_suffix'])
-                if not os.path.exists(corrected_summary_shp):
-                    try:
-                        remove_reservoir_area(sed_export_ras, lulc_raster,
-                                              watersheds)
-                    except:
-                        continue
-                fields = ['ws_id', 'sed_expcor', 'Res_name']
+                usle_ras = os.path.join(sdr_args['workspace_dir'],
+                                              'usle_%s.tif' %
+                                              sdr_args['results_suffix'])
+                # if not os.path.exists(corrected_summary_shp):
+                # try:
+                remove_reservoir_area(sed_export_ras, usle_ras, lulc_raster,
+                                      watersheds)
+                # except:
+                    # continue
                 num_rows = 0
                 shpf = ogr.Open(corrected_summary_shp)
                 layer = shpf.GetLayer(0)
@@ -256,6 +273,8 @@ def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
                     results_dict['ws_id'].append(feature.GetField("ws_id"))
                     results_dict['sediment_export'].append(
                                             feature.GetField("sed_expcor"))
+                    results_dict['usle_tot'].append(
+                                            feature.GetField("usle_totco"))
                     results_dict['Res_name'].append(feature.GetField("Res_name"))
                     results_dict['scen_name'].append(scen_name)
                     results_dict['lulc_raster'].append(lulc_raster)
@@ -279,22 +298,22 @@ def whole_shebang(scenario_csv, data_dir, results_csv):
     launch_sdr_collect_results(run_df, TFA_dict, results_csv)
 
 def launch_buffer_creation(data_dir):
-    substrate_lulc = os.path.join(data_dir, "stream_buffer_300m_inlet.tif")
+    substrate_lulc = os.path.join(data_dir, "stream_buffer_93m_inlet.tif")
     aoi_shp = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\all_watersheds.shp"
     aoi_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\watersheds_separate"
-    for percent_to_convert in [0.1, 0.25, 0.5]:
+    for percent_to_convert in [0.2, 0.5]:
         result_raster = os.path.join(data_dir,
-                                     'stream_buffer_300m_%.2fperc.tif' %
+                                     'stream_buffer_93m_%.2fperc.tif' %
                                      percent_to_convert)
         generate_buf_scenario(substrate_lulc, aoi_shp, aoi_dir,
                               percent_to_convert, result_raster)
                           
 if __name__ == '__main__':
-    scenario_csv = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\scenario_table_9.13.16.csv"
-    data_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16"
-    results_csv = r"C:\Users\Ginger\Desktop\bareground_background_scenario_results_9.13.16.csv"
-    # launch_buffer_creation(data_dir)
+    scenario_csv = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\baseline_bare_12.20.16.csv"
+    data_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_inputs_12.21.16"
+    results_csv = r"C:\Users\Ginger\Desktop\baseline_bare_erosivity_30s_12.20.16.csv"
+    launch_buffer_creation(data_dir)
     # whole_shebang(scenario_csv, data_dir, results_csv)
-    watersheds = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\all_watersheds.shp"
-    lulc = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\scenario_lulc\baseline_MODIS_2010.tif"
-    count_lulc_composition(watersheds, lulc)
+    # watersheds = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\all_watersheds.shp"
+    # lulc = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\scenario_lulc\baseline_MODIS_2010.tif"
+    # count_lulc_composition(watersheds, lulc)
