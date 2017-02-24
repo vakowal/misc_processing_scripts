@@ -205,18 +205,19 @@ def remove_reservoir_area(sed_export_ras, usle_ras, lulc_ras, watersheds):
     datasource_copy.Destroy()
         
 def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
-    kb_ic_list = [(10, -0.3), (10, -0.5), (10, -1.)]
+    kb_ic_list = [(20, 0.1)]  # [(10, -0.3), (10, -0.5), (10, -1.)]
     
+    # erosivity options:
     # u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/erosivity_30s_prj_ex.tif'
     # u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/annual_prec_vb_erosivity_proj.tif'
-    
+    # u"C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/erosivity_MFI_GK_1.6.17.tif"
     
     sdr_args = { 
-        'biophysical_table_path': r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\biophysical_table_MODIS_12.20.16.csv",
-        u'dem_path': r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\DEM_strm90m_subset_fill.tif",
+        'biophysical_table_path': u"C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/scenario_data_8.31.16/biophysical_table_MODIS_12.20.16.csv",
+        u'dem_path': u"C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/DEM_strm90m_subset_fill.tif",
         u'drainage_path': u'',
         u'erodibility_path': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/erodibility_ISRICSoilGrids250m_7.5arcseconds_subset_prj.tif',
-        u'erosivity_path': u'C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/erosivity_30s_prj_ex.tif',
+        u'erosivity_path': u"C:/Users/Ginger/Documents/NatCap/GIS_local/Corinne/Volta/erosivity_MFI_GK_1.6.17.tif",
         u'ic_0_param': '',
         u'k_param': '',
         u'lulc_path': '',
@@ -224,7 +225,7 @@ def launch_sdr_collect_results(run_df, TFA_dict, results_csv):
         u'sdr_max': u'1.0',
         u'threshold_flow_accumulation': '',
         u'watersheds_path': '',
-        u'workspace_dir': 'C:/Users/Ginger/Desktop/sdr_12.20.16_erosivity_30s',
+        u'workspace_dir': 'C:/Users/Ginger/Desktop/scenarios_1.9.17',
     }
     
     results_dict = {'scen_name': [], 'lulc_raster': [], 'Res_name': [],
@@ -309,11 +310,11 @@ def launch_buffer_creation(data_dir):
                               percent_to_convert, result_raster)
                           
 if __name__ == '__main__':
-    scenario_csv = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\baseline_bare_12.20.16.csv"
-    data_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_inputs_12.21.16"
-    results_csv = r"C:\Users\Ginger\Desktop\baseline_bare_erosivity_30s_12.20.16.csv"
-    launch_buffer_creation(data_dir)
-    # whole_shebang(scenario_csv, data_dir, results_csv)
+    scenario_csv = "C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\scenario_table_12.21.16.csv"
+    # launch_buffer_creation(data_dir)
+    data_dir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16"
+    results_csv = r"C:\Users\Ginger\Desktop\scenario_results_1.9.17.csv"
+    whole_shebang(scenario_csv, data_dir, results_csv)
     # watersheds = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\all_watersheds.shp"
     # lulc = r"C:\Users\Ginger\Documents\NatCap\GIS_local\Corinne\Volta\scenario_data_8.31.16\scenario_lulc\baseline_MODIS_2010.tif"
     # count_lulc_composition(watersheds, lulc)
