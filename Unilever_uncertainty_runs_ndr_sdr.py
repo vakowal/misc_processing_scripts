@@ -1,5 +1,4 @@
 """
-The ugliest script ever written.
 Run SDR and NDR for Mato Grosso and Iowa, Unilever, 10.7.15
 """
 
@@ -67,8 +66,8 @@ if __name__ == '__main__':
         IA_SDR_args[u'lulc_uri'] = scenario_3
         IA_SDR_args[u'results_suffix'] = "scen_3" + biophys[-18:-4]
         print "******* executing SDR Iowa scenario 3"
-        # natcap.invest.sdr.sdr.execute(IA_SDR_args)
-        # shutil.rmtree(os.path.join(IA_SDR_workspace, 'intermediate'))
+        natcap.invest.sdr.sdr.execute(IA_SDR_args)
+        shutil.rmtree(os.path.join(IA_SDR_workspace, 'intermediate'))
     
     # NDR Iowa
     IA_NDR_workspace = os.path.join(result_dir, "IA_NDR")
@@ -109,8 +108,8 @@ if __name__ == '__main__':
         IA_NDR_args[u'lulc_uri'] = scenario_3
         IA_NDR_args[u'results_suffix'] = "scen_3" + biophys[-18:-4]
         print "******* executing NDR Iowa scenario 3"
-        # natcap.invest.ndr.ndr.execute(IA_NDR_args)
-        # shutil.rmtree(os.path.join(IA_NDR_workspace, 'intermediate'))
+        natcap.invest.ndr.ndr.execute(IA_NDR_args)
+        shutil.rmtree(os.path.join(IA_NDR_workspace, 'intermediate'))
     
     ## NDR Mato Grosso
     MT_scenario_files = ['MT_I_SGBP.tif',
@@ -162,8 +161,8 @@ if __name__ == '__main__':
         lulc_name = os.path.basename(scenario)[3:-4]
         MT_NDR_args[u'results_suffix'] = lulc_name + "_no-intens"
         print "******* executing NDR Mato Grosso scenario " + lulc_name
-        # natcap.invest.ndr.ndr.execute(MT_NDR_args)
-        # shutil.rmtree(os.path.join(MT_NDR_workspace, 'intermediate'))
+        natcap.invest.ndr.ndr.execute(MT_NDR_args)
+        shutil.rmtree(os.path.join(MT_NDR_workspace, 'intermediate'))
         
     ## SDR Mato Grosso
     MT_SDR_workspace = os.path.join(result_dir, "MT_SDR")

@@ -17,7 +17,15 @@ highlands = "C:/Users/Ginger/Dropbox/NatCap_backup/CGIAR/Peru/Spatial_data_study
 graz_areas = "C:/Users/Ginger/Dropbox/NatCap_backup/CGIAR/Peru/Spatial_data_study_area/Estimated_grazing_areas.shp"
 clim_folder = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/climate_and_soil/Worldclim_current"
 soil_folder = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Forage_model_data/climate_and_soil/soil_grids_processed"
-    
+
+def tabulate_lulc_by_district():
+    lulc_shp = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/Other_spatial_data/SWAT_HRU_def.shp"
+    districts = "C:/Users/Ginger/Documents/NatCap/GIS_local/CGIAR/Peru/boundaries/BAS_LIM_DISTRITOS.shp"
+    save_as = r"C:\Users\Ginger\Documents\ArcGIS\Default.gdb\lulc_by_district"
+    arcpy.TabulateIntersection_analysis(districts, 'NOMBDIST', lulc_shp,
+                                        save_as, "LU_NUM",
+                                        out_units='HECTARES')
+
 def create_mv_rasters(mv_table, subbasin_tif, outdir):
     """make marginal value rasters from livestock model that can be summarized
     by implementation unit polygons"""
@@ -301,6 +309,7 @@ if __name__ == "__main__":
     outdir = r"C:\Users\Ginger\Documents\NatCap\GIS_local\CGIAR\Peru\summarized_by_zone\livestocklit_mv_rasters_11.8.16"
     # create_mv_rasters(mv_table, subbasin_tif, outdir)
     
-    summarize_mv_by_HRU()
+    # summarize_mv_by_HRU()
+    tabulate_lulc_by_district()
     
     
