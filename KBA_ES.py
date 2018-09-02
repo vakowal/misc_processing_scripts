@@ -226,6 +226,82 @@ def nested_zonal_stats(
             within the country, and the sum of service values within KBAs
             within the country
     """
+    service_nodata = pygeoprocessing.get_raster_info(
+        service_raster_path)['nodata'][0]
+    country_nodata = pygeoprocessing.get_raster_info(
+        country_raster_path)['nodata'][0]
+
+    service_raster = gdal.OpenEx(service_raster_path)
+    service_band = service_raster.GetRasterBand(1)
+
+    country_raster = gdal.OpenEx(country_raster_path)
+    country_band = country_raster.GetRasterBand(1)
+
+    kba_raster = gdal.OpenEx(kba_raster_path)
+    kba_band = kba_raster.GetRasterBand(1)
+
+    try:
+        zonal_stat_dict = {}
+        last_blocksize = None
+        for block_offset in pygeoprocessing.iterblocks(
+                country_raster_path, offset_only=True):
+            blocksize = (block_offset['win_ysize'], block_offset['win_xsize'])
+
+            if last_blocksize != blocksize:
+                service_array = numpy.zeros(
+                    blocksize,
+                    dtype=pygeoprocessing._gdal_to_numpy_type(service_band))
+                country_array = numpy.zeros(
+                    blocksize,
+                    dtype=pygeoprocessing._gdal_to_numpy_type(country_band))
+                kba_array = numpy.zeros(
+                    blocksize,
+                    dtype=pygeoprocessing._gdal_to_numpy_type(kba_band))
+                last_blocksize = blocksize
+
+            service_data = block_offset.copy()
+            service_data['buf_obj'] = service_array
+            service_band.ReadAsArray(**service_data)
+
+            country_data = block_offset.copy()
+            country_data['buf_obj'] = country_array
+            country_band.ReadAsArray(**country_data)
+
+            kba_data = block_offset.copy()
+            kba_data['buf_obj'] = kba_array
+            kba_band.ReadAsArray(**kba_data)
+
+            country_values = numpy.unique(
+                country_array[country_array != country_nodata])
+            for country_id in country_values:
+                valid_mask = (
+                    (service_array != service_nodata) &
+                    (kba_array > 0) &
+                    (country_array == country_id))
+                valid_block = service_array[valid_mask]
+                country_in_kba_sum = numpy.sum(valid_block)
+                if country_in_kba_sum > 0:
+                    country_in_kba_avg = country_in_kba_sum / valid_block.size
+                else:
+                    country_in_kba_avg = 0
+                if country_id in zonal_stat_dict:
+                    zonal_stat_dict[country_id]['sum'] += country_in_kba_sum
+                    zonal_stat_dict[country_id]['average'] += (
+                        country_in_kba_avg)
+                else:
+                    zonal_stat_dict[country_id] = {
+                        'sum': country_in_kba_sum,
+                        'average': country_in_kba_avg,
+                    }
+    finally:
+        service_band = None
+        country_band = None
+        kba_band = None
+        gdal.Dataset.__swig_destroy__(service_raster)
+        gdal.Dataset.__swig_destroy__(country_raster)
+        gdal.Dataset.__swig_destroy__(kba_raster)
+
+    return zonal_stat_dict
 
 
 def cv_habitat_attribution_workflow(workspace_dir):
@@ -353,8 +429,10 @@ def pollination_workflow(workspace_dir, service_raster_path):
     raw_input_path_list = [data_dict[k] for k in sorted(data_dict.iterkeys())]
     aligned_input_path_list = [
         aligned_inputs[k] for k in sorted(aligned_inputs.iterkeys())]
-    print "Warning: service raster will be resampled from {} to {}".format(
-        service_pixel_size, target_pixel_size)
+    print (
+        "Warning: service raster will be resampled from {} to {}".format(
+            service_pixel_size, target_pixel_size) +
+        " via {} resampling".format(resampling_method))
     pygeoprocessing.align_and_resize_raster_stack(
         raw_input_path_list, aligned_input_path_list,
         [resampling_method] * len(aligned_input_path_list), target_pixel_size,
@@ -379,8 +457,23 @@ def pollination_workflow(workspace_dir, service_raster_path):
         service_by_country, 'country_id', country_zonal_stat_csv)
 
     # for each country, sum of service within KBAs
+    service_in_KBA_by_country = nested_zonal_stats(
+        aligned_inputs['service_raster'], aligned_inputs['countries_mask'],
+        aligned_inputs['kba_raster'])
+    nested_zonal_stat_csv = os.path.join(
+        workspace_dir, "zonal_stats_in_KBA_by_country_{}.csv".format(
+            os.path.basename(service_raster_path)))
+    zonal_stats_to_csv(
+        service_in_KBA_by_country, 'country_id', nested_zonal_stat_csv)
+
+
+def test_pollination_workflow():
+    workspace_dir = "C:/Users/ginge/Desktop/kba_scratch"
+    if not os.path.exists(workspace_dir):
+        os.makedirs(workspace_dir)
+    service_raster_path = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_en_10s_cur.tif"
+    pollination_workflow(workspace_dir, service_raster_path)
 
 
 if __name__ == '__main__':
-    # pollination_workflow(workspace_dir, service_raster_path)
-    test_raster_resampling()
+    test_pollination_workflow()
