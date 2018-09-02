@@ -99,7 +99,8 @@ def zonal_stats(service_raster_path, zonal_raster_path):
         service_raster_path (string): path to ecosystem services raster
             giving service provision per pixel
         zonal_raster_path (string): path to raster containing zones within
-            which the service raster will be summarized
+            which the service raster will be summarized, where each zone is
+            identified by a positive integer
 
     Returns:
         dictionary containing key, value pairs where each key is a unique
@@ -109,8 +110,6 @@ def zonal_stats(service_raster_path, zonal_raster_path):
     """
     service_nodata = pygeoprocessing.get_raster_info(
         service_raster_path)['nodata'][0]
-    zone_nodata = pygeoprocessing.get_raster_info(
-        zonal_raster_path)['nodata'][0]
 
     service_raster = gdal.OpenEx(service_raster_path)
     service_band = service_raster.GetRasterBand(1)
@@ -142,7 +141,7 @@ def zonal_stats(service_raster_path, zonal_raster_path):
             zone_data['buf_obj'] = zone_array
             zone_band.ReadAsArray(**zone_data)
 
-            zone_values = numpy.unique(zone_array[zone_array != zone_nodata])
+            zone_values = numpy.unique(zone_array[zone_array > 0])
 
             for zone in zone_values:
                 valid_mask = (
@@ -216,7 +215,7 @@ def nested_zonal_stats(
         service_raster_path (string): path to ecosystem services raster
             giving service provision per pixel
         country_raster_path (string): path to countries raster where each
-            country is identified by a unique integer
+            country is identified by a positive integer
         kba_raster_path (string): path to KBA raster where each KBA is
             identified by a positive integer
 
