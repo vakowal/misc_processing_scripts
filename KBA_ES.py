@@ -287,6 +287,29 @@ def cv_habitat_attribution_workflow(workspace_dir):
     # mask out habitat pixels only
 
 
+def test_raster_resampling():
+    """Test using the "average" method to resample a fine resolution raster."""
+    scratch_dir = "C:/Users/ginge/Desktop/kba_scratch"
+    if not os.path.exists(scratch_dir):
+        os.makedirs(scratch_dir)
+
+    service_raster = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_en_10s_cur.tif"
+    KBA_raster = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/Mark_Mulligan_data/kbas1k/kbas1k.asc"
+
+    target_pixel_size = pygeoprocessing.get_raster_info(
+        KBA_raster)['pixel_size']
+    service_pixel_size = pygeoprocessing.get_raster_info(
+        service_raster)['pixel_size']
+    raw_input_path_list = [KBA_raster, service_raster]
+    aligned_input_path_list = [
+        os.path.join(scratch_dir, os.path.basename(r)) for r in
+        raw_input_path_list]
+    pygeoprocessing.align_and_resize_raster_stack(
+        raw_input_path_list, aligned_input_path_list,
+        ['average'] * len(aligned_input_path_list), target_pixel_size,
+        bounding_box_mode="union", raster_align_index=0)
+
+
 def pollination_workflow(workspace_dir, service_raster_path):
     """Frame out workflow to summarize one service raster.
 
@@ -315,6 +338,14 @@ def pollination_workflow(workspace_dir, service_raster_path):
     # resample service raster to align with KBA raster
     target_pixel_size = pygeoprocessing.get_raster_info(
         data_dict['kba_raster'])['pixel_size']
+    service_pixel_size = pygeoprocessing.get_raster_info(
+        data_dict['service_raster'])['pixel_size']
+
+    # resampling method depends on the ratio of KBA and service pixel sizes
+    if target_pixel_size[0] / service_pixel_size[0] > 2:
+        resampling_method = 'average'
+    else:
+        resampling_method = 'nearest'
     aligned_raster_dir = os.path.join(workspace_dir, 'aligned_inputs')
     aligned_inputs = dict([(
         key, os.path.join(aligned_raster_dir, os.path.basename(path))) for
@@ -322,14 +353,12 @@ def pollination_workflow(workspace_dir, service_raster_path):
     raw_input_path_list = [data_dict[k] for k in sorted(data_dict.iterkeys())]
     aligned_input_path_list = [
         aligned_inputs[k] for k in sorted(aligned_inputs.iterkeys())]
-    service_pixel_size = pygeoprocessing.get_raster_info(
-        data_dict['service_raster'])['pixel_size']
     print "Warning: service raster will be resampled from {} to {}".format(
         service_pixel_size, target_pixel_size)
     pygeoprocessing.align_and_resize_raster_stack(
         raw_input_path_list, aligned_input_path_list,
-        ['nearest'] * len(aligned_input_path_list), target_pixel_size,
-        bounding_box_mode="union", raster_align_index=0)  # TODO best way to resample ES raster, given pixel sizes?
+        [resampling_method] * len(aligned_input_path_list), target_pixel_size,
+        bounding_box_mode="union", raster_align_index=0)
 
     # spatial summaries
     # sum and average of service values within each KBA
