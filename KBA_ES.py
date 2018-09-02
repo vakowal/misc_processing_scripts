@@ -200,7 +200,7 @@ def zonal_stats_to_csv(zonal_stat_dict, zone_identifier, save_as):
             zonal_stat_dict.iterkeys()],
     }
     zonal_df = pandas.DataFrame(data=service_by_zone_dict)
-    country_df.to_csv(save_as)
+    zonal_df.to_csv(save_as)
 
 
 def nested_zonal_stats(
@@ -364,59 +364,23 @@ def pollination_workflow(workspace_dir, service_raster_path):
     # sum and average of service values within each KBA
     service_by_KBA = zonal_stats(
         aligned_inputs['service_raster'], aligned_inputs['kba_raster'])
-    KBA_zonal_stat_csv = os.path.join(workspace_dir, "zonal_stats_by_KBA.csv")
+    KBA_zonal_stat_csv = os.path.join(
+        workspace_dir, "zonal_stats_by_KBA_{}.csv".format(
+            os.path.basename(service_raster_path)))
     zonal_stats_to_csv(service_by_KBA, 'KBA_id', KBA_zonal_stat_csv)
-
-    sum_value_map = {
-        key: service_by_KBA[key]['sum'] for key in
-        service_by_KBA.iterkeys()}
-    KBA_by_service_sum_path = os.path.join(
-        workspace_dir, 'KBA_by_service_sum.tif')
-    pygeoprocessing.reclassify_raster(
-        (aligned_inputs['kba_raster'], 1), sum_value_map,
-        KBA_by_service_sum_path, gdal.GDT_Float32, _TARGET_NODATA)
-
-    average_value_map = {
-        key: service_by_KBA[key]['average'] for key in
-        service_by_KBA.iterkeys()
-    }
-    KBA_by_service_avg_path = os.path.join(
-        workspace_dir, 'KBA_by_service_avg.tif')
-    pygeoprocessing.reclassify_raster(
-        (aligned_inputs['kba_raster'], 1), average_value_map,
-        KBA_by_service_avg_path, gdal.GDT_Float32, _TARGET_NODATA)
 
     # sum and average of service values within each country
     service_by_country = zonal_stats(
         aligned_inputs['service_raster'], aligned_inputs['countries_mask'])
     country_zonal_stat_csv = os.path.join(
-        workspace_dir, "zonal_stats_by_country.csv")
+        workspace_dir, "zonal_stats_by_country_{}.csv".format(
+            os.path.basename(service_raster_path)))
     zonal_stats_to_csv(
         service_by_country, 'country_id', country_zonal_stat_csv)
-
-    sum_value_map = {
-        key: service_by_country[key]['sum'] for key in
-        service_by_country.iterkeys()}
-    country_by_service_sum_path = os.path.join(
-        workspace_dir, 'country_by_service_sum.tif')
-    pygeoprocessing.reclassify_raster(
-        (aligned_inputs['countries_mask'], 1), sum_value_map,
-        country_by_service_sum_path, gdal.GDT_Float32, _TARGET_NODATA)
-
-    average_value_map = {
-        key: service_by_country[key]['average'] for key in
-        service_by_country.iterkeys()
-    }
-    country_by_service_avg_path = os.path.join(
-        workspace_dir, 'country_by_service_avg.tif')
-    pygeoprocessing.reclassify_raster(
-        (aligned_inputs['countries_mask'], 1), average_value_map,
-        country_by_service_avg_path, gdal.GDT_Float32, _TARGET_NODATA)
 
     # for each country, sum of service within KBAs
 
 
 if __name__ == '__main__':
-    workspace_dir = "C:/Users/ginge/Desktop/kba_scratch"
-    service_raster_path = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/placeholder_pollination_raster.tif"
-    pollination_workflow(workspace_dir, service_raster_path)
+    # pollination_workflow(workspace_dir, service_raster_path)
+    test_raster_resampling()
