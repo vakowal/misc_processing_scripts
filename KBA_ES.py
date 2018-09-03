@@ -203,6 +203,37 @@ def zonal_stats_to_csv(zonal_stat_dict, zone_identifier, save_as):
     zonal_df.to_csv(save_as)
 
 
+def zonal_stat_to_raster(zonal_stat_dict, zone_raster, sum_or_avg, save_as):
+    """Display zones in a raster by their sum or average value.
+
+    Reclassify the zone_raster by sum or average service value from the
+    zonal_stat_dict.
+
+    Parameters:
+        zonal_stat_dict (dict): dictionary of key, value pairs where each key
+            is a unique value in the zonal raster, and each value is a
+            nested dictionary containing the average service value within the
+            zone, and the sum of service values within each zone
+        zone_raster (string): path to raster containing zones as summarized
+            in the zonal_stat_dict.
+        sum_or_avg (string): if `sum`, display sum of service values per zone;
+            if `average`, display average service value per zone
+        save_as (string): path to save reclassified raster
+
+    Returns:
+        None
+    """
+    reclass_dict = {
+        zonal_stat_dict[key]: zonal_stat_dict[key][sum_or_avg]
+        for key in zonal_stat_dict.iterkeys()
+    }
+
+    target_datatype = gdal.GDT_Float32
+    target_nodata = _TARGET_NODATA
+    pygeoprocessing.reclassify_raster(
+        zone_raster, reclass_dict, save_as, target_datatype, target_nodata)
+
+
 def nested_zonal_stats(
         service_raster_path, country_raster_path, kba_raster_path):
     """Calculate nested zonal statistics from a service raster.
