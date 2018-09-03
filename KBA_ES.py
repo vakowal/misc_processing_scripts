@@ -444,94 +444,174 @@ def test_raster_resampling():
         bounding_box_mode="union", raster_align_index=0)
 
 
-def pollination_workflow(workspace_dir, service_raster_path):
+def process_pollination_service_rasters(workspace_dir, service_raster_list):
+    """Process service rasters for summarizing via KBA and country zonal stats.
+
+    First reclassify areas of nodata in the service rasters under the country
+    mask to zero. Then resample service rasters to match KBA and country
+    rasters.
+
+    Parameters:
+        workspace_dir (string): path to directory where intermediate and output
+            datasets will be written
+        service_raster_list (list): list of paths to raw service rasters that
+            should be pre-processed prior to summarizing via country and KBA
+            zonal stats
+
+    Returns:
+        dictionary of aligned inputs
+    """
+    data_dict = base_data_dict()
+    aligned_raster_dir = os.path.join(workspace_dir, 'aligned_inputs')
+    aligned_inputs_dict = {
+        'kba_raster': os.path.join(
+            aligned_raster_dir, os.path.basename(data_dict['kba_raster'])),
+        'countries_mask': os.path.join(
+            aligned_raster_dir, os.path.basename(data_dict['countries_mask'])),
+        'service_raster_list': [
+            os.path.join(aligned_raster_dir, os.path.basename(r)) for r in
+            service_raster_list],
+    }
+    existing_processed_inputs = [
+        os.path.join(workspace_dir, 'aligned_inputs', os.path.basename(r))
+        for r in service_raster_list]
+    if all([os.path.exists(p) for p in existing_processed_inputs]):
+        return aligned_inputs_dict
+
+    # create land mask of zeroes at service raster resolution
+    template_service_raster = service_raster_list[0]
+    service_pixel_size = pygeoprocessing.get_raster_info(
+        template_service_raster)['pixel_size']
+
+    intermediate_dir = os.path.join(workspace_dir, 'intermediate')
+    if not os.path.exists(intermediate_dir):
+        os.makedirs(intermediate_dir)
+
+    # create countries mask of zeroes to mosaic into service rasters
+    # I DID THIS BY HAND IN ARC BECAUSE IT WAS TAKING FOREVER
+    countries_zero_mask_in = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/pollination_summary/intermediate/country_mask_zeroes.tif"
+    countries_zero_mask = os.path.join(
+        intermediate_dir, 'country_mask_zeroes_aligned.tif')
+    input_path_list = [
+        template_service_raster, countries_zero_mask_in]
+    aligned_path_list = [
+        os.path.join(
+            intermediate_dir, os.path.basename(template_service_raster)),
+        countries_zero_mask]
+    # pygeoprocessing.align_and_resize_raster_stack(
+    #     input_path_list, aligned_path_list,
+    #     ['nearest'] * len(aligned_path_list), service_pixel_size,
+    #     bounding_box_mode="union", raster_align_index=0)
+
+    # fill nodata areas in service rasters overlapping countries mask with 0
+    def mosaic_rasters(countries_mask_zeroes, service_raster):
+        """Mosaic values together from two rasters."""
+        mosaic = numpy.empty(countries_mask_zeroes.shape, dtype=numpy.float32)
+        mosaic[:] = _TARGET_NODATA
+        mosaic[countries_mask_zeroes != _TARGET_NODATA] = 0
+        mosaic[service_raster != service_nodata] = service_raster[
+            service_raster != service_nodata]
+        return mosaic
+
+    mosaic_dir = os.path.join(intermediate_dir, 'mosaic_countries_mask_zero')
+    if not os.path.exists(mosaic_dir):
+        os.makedirs(mosaic_dir)
+    for service_raster in service_raster_list:
+        service_nodata = pygeoprocessing.get_raster_info(
+            service_raster)['nodata'][0]
+        save_as = os.path.join(mosaic_dir, os.path.basename(service_raster))
+        pygeoprocessing.raster_calculator(
+            [(path, 1) for path in countries_zero_mask, service_raster],
+            mosaic_rasters, save_as, gdal.GDT_Float32, _TARGET_NODATA)
+
+    # resample and align zero-filled service rasters
+    kba_pixel_size = pygeoprocessing.get_raster_info(
+        data_dict['kba_raster'])['pixel_size']
+    input_path_list = (
+        [data_dict['kba_raster'], data_dict['countries_mask']] +
+        [os.path.join(mosaic_dir, os.path.basename(r)) for r in
+            service_raster_list])
+    aligned_path_list = [
+        os.path.join(aligned_raster_dir, os.path.basename(r)) for r in
+        input_path_list]
+    pygeoprocessing.align_and_resize_raster_stack(
+        input_path_list, aligned_path_list,
+        ['average'] * len(aligned_path_list), kba_pixel_size,
+        bounding_box_mode="union", raster_align_index=0)
+
+    return aligned_inputs_dict
+
+
+def pollination_workflow(workspace_dir):
     """Frame out workflow to summarize one service raster.
 
     Parameters:
         workspace_dir (string): path to folder where outputs will be created
-        service_raster_path (string): path to one service raster that should
-            be summarized spatially by intersection with KBAs
 
     Returns:
         none
     """
-    data_dict = base_data_dict()
-    data_dict['service_raster'] = service_raster_path
+    service_raster_list = [
+        "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_en_10s_cur.tif",
+        "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_fo_10s_cur.tif",
+        "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_va_10s_cur.tif",
+    ]
+    aligned_inputs = process_pollination_service_rasters(
+        workspace_dir, service_raster_list)
 
-    kba_proj = pygeoprocessing.get_raster_info(
-        data_dict['kba_raster'])['projection']
-    es_proj = pygeoprocessing.get_raster_info(
-        data_dict['service_raster'])['projection']
-    print "Warning: assuming the projection of KBA and ES data are the same"
-    print "KBA projection: {}".format(kba_proj)
-    print "ES projection: {}".format(es_proj)
+    # TODO rescale to 0 - 1?
+    # TODO how to combine the 3 nutrients?
 
-    # rescale service raster to be between 0-1 globally ?
-    # Mark's service provision maps are scaled to 0-1
-
-    # resample service raster to align with KBA raster
-    target_pixel_size = pygeoprocessing.get_raster_info(
-        data_dict['kba_raster'])['pixel_size']
-    service_pixel_size = pygeoprocessing.get_raster_info(
-        data_dict['service_raster'])['pixel_size']
-
-    # resampling method depends on the ratio of KBA and service pixel sizes
-    if target_pixel_size[0] / service_pixel_size[0] > 1.5:
-        resampling_method = 'average'
-    else:
-        resampling_method = 'nearest'
-    aligned_raster_dir = os.path.join(workspace_dir, 'aligned_inputs')
-    aligned_inputs = dict([(
-        key, os.path.join(aligned_raster_dir, os.path.basename(path))) for
-        key, path in data_dict.iteritems()])
-    raw_input_path_list = [data_dict[k] for k in sorted(data_dict.iterkeys())]
-    aligned_input_path_list = [
-        aligned_inputs[k] for k in sorted(aligned_inputs.iterkeys())]
-    print (
-        "Warning: service raster will be resampled from {} to {}".format(
-            service_pixel_size, target_pixel_size) +
-        " via {} resampling".format(resampling_method))
-    pygeoprocessing.align_and_resize_raster_stack(
-        raw_input_path_list, aligned_input_path_list,
-        [resampling_method] * len(aligned_input_path_list), target_pixel_size,
-        bounding_box_mode="union", raster_align_index=0)
+    result_dir = os.path.join(workspace_dir, 'summary_tables_and_maps')
+    if not os.path.exists(result_dir):
+        os.makedirs(result_dir)
 
     # spatial summaries
-    # sum and average of service values within each KBA
-    service_by_KBA = zonal_stats(
-        aligned_inputs['service_raster'], aligned_inputs['kba_raster'])
-    KBA_zonal_stat_csv = os.path.join(
-        workspace_dir, "zonal_stats_by_KBA_{}.csv".format(
-            os.path.basename(service_raster_path)))
-    zonal_stats_to_csv(service_by_KBA, 'KBA_id', KBA_zonal_stat_csv)
+    for service_raster in aligned_inputs['service_raster_list']:
+        # sum and average of service values within each KBA
+        service_by_KBA = zonal_stats(
+            service_raster, aligned_inputs['kba_raster'])
+        KBA_zonal_stat_csv = os.path.join(
+            result_dir, "zonal_stats_by_KBA_{}.csv".format(
+                os.path.basename(service_raster)))
+        zonal_stats_to_csv(service_by_KBA, 'KBA_id', KBA_zonal_stat_csv)
+        avg_by_KBA_raster = os.path.join(
+            result_dir, "average_service_by_KBA_{}.tif".format(
+                os.path.basename(service_raster)))
+        zonal_stat_to_raster(
+            KBA_zonal_stat_csv, aligned_inputs['kba_raster'], 'average',
+            avg_by_KBA_raster)
+        sum_by_KBA_raster = os.path.join(
+            result_dir, "sum_service_by_KBA_{}.tif".format(
+                os.path.basename(service_raster)))
+        zonal_stat_to_raster(
+            KBA_zonal_stat_csv, aligned_inputs['kba_raster'], 'sum',
+            sum_by_KBA_raster)
 
-    # sum and average of service values within each country
-    service_by_country = zonal_stats(
-        aligned_inputs['service_raster'], aligned_inputs['countries_mask'])
-    country_zonal_stat_csv = os.path.join(
-        workspace_dir, "zonal_stats_by_country_{}.csv".format(
-            os.path.basename(service_raster_path)))
-    zonal_stats_to_csv(
-        service_by_country, 'country_id', country_zonal_stat_csv)
-
-    # for each country, sum of service within KBAs
-    service_in_KBA_by_country = nested_zonal_stats(
-        aligned_inputs['service_raster'], aligned_inputs['countries_mask'],
-        aligned_inputs['kba_raster'])
-    nested_zonal_stat_csv = os.path.join(
-        workspace_dir, "zonal_stats_in_KBA_by_country_{}.csv".format(
-            os.path.basename(service_raster_path)))
-    zonal_stats_to_csv(
-        service_in_KBA_by_country, 'country_id', nested_zonal_stat_csv)
-
-
-def test_pollination_workflow():
-    workspace_dir = "C:/Users/ginge/Desktop/kba_scratch"
-    if not os.path.exists(workspace_dir):
-        os.makedirs(workspace_dir)
-    service_raster_path = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_en_10s_cur.tif"
-    pollination_workflow(workspace_dir, service_raster_path)
+        # sum and average of service values within each country
+        service_by_country = zonal_stats(
+            service_raster, aligned_inputs['countries_mask'])
+        service_in_KBA_by_country = nested_zonal_stats(
+            service_raster, aligned_inputs['countries_mask'],
+            aligned_inputs['kba_raster'])
+        country_zonal_stat_csv = os.path.join(
+            result_dir, "zonal_stats_by_country_{}.csv".format(
+                os.path.basename(service_raster)))
+        summarize_nested_zonal_stats(
+            service_by_country, service_in_KBA_by_country,
+            country_zonal_stat_csv)
+        proportion_in_kba_by_country_raster = os.path.join(
+            result_dir,
+            "proportion_sum_service_in_kba_by_country_{}.tif".format(
+                os.path.basename(service_raster)))
+        zonal_stat_to_raster(
+            country_zonal_stat_csv, aligned_inputs['countries_mask'],
+            'proportion_service_in_KBAs', proportion_in_kba_by_country_raster)
+        sum_by_country_raster = os.path.join(
+            result_dir, "sum_service_by_country_{}.tif".format(
+                os.path.basename(service_raster)))
 
 
 if __name__ == '__main__':
-    test_pollination_workflow()
+    workspace_dir = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/pollination_summary"
+    pollination_workflow(workspace_dir)
