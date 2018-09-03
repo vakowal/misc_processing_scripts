@@ -170,6 +170,24 @@ def zonal_stats(service_raster_path, zonal_raster_path):
     return zonal_stat_dict
 
 
+def summarize_nested_zonal_stats(
+        zonal_stat_dict, nested_zonal_stat_dict, save_as):
+    """Calculate proportion of service in each country that is in KBAs."""
+    country_dict = {
+        'country_id': [key for key in zonal_stat_dict.iterkeys()],
+        'total_service_sum': [
+            zonal_stat_dict[key]['sum'] for key in
+            zonal_stat_dict.iterkeys()],
+        'service_sum_in_KBAs': [
+            nested_zonal_stat_dict[key]['sum'] for key in
+            zonal_stat_dict.iterkeys()],
+    }
+    summary_df = pandas.DataFrame(data=country_dict)
+    summary_df['proportion_service_in_KBAs'] = (
+        summary_df.service_sum_in_KBAs / summary_df.total_service_sum)
+    summary_df.to_csv(save_as, index=False)
+
+
 def zonal_stats_to_csv(zonal_stat_dict, zone_identifier, save_as):
     """Save zonal stats as a csv table.
 
@@ -200,22 +218,22 @@ def zonal_stats_to_csv(zonal_stat_dict, zone_identifier, save_as):
             zonal_stat_dict.iterkeys()],
     }
     zonal_df = pandas.DataFrame(data=service_by_zone_dict)
-    zonal_df.to_csv(save_as)
+    zonal_df.to_csv(save_as, index=False)
 
 
-def zonal_stat_to_raster(zonal_stat_dict, zone_raster, sum_or_avg, save_as):
+def zonal_stat_to_raster(zonal_stat_csv, zone_raster, sum_or_avg, save_as):
     """Display zones in a raster by their sum or average value.
 
     Reclassify the zone_raster by sum or average service value from the
-    zonal_stat_dict.
+    zonal_stat_csv.
 
     Parameters:
-        zonal_stat_dict (dict): dictionary of key, value pairs where each key
-            is a unique value in the zonal raster, and each value is a
-            nested dictionary containing the average service value within the
-            zone, and the sum of service values within each zone
+        zonal_stat_csv (string): path to csv file containing zonal statistics
+            where each row contains a zone id (e.g., country_id or kba_id),
+            average service value inside that zone, and the sum of service
+            values within that zone
         zone_raster (string): path to raster containing zones as summarized
-            in the zonal_stat_dict.
+            in the zonal_stat_csv.
         sum_or_avg (string): if `sum`, display sum of service values per zone;
             if `average`, display average service value per zone
         save_as (string): path to save reclassified raster
@@ -223,15 +241,24 @@ def zonal_stat_to_raster(zonal_stat_dict, zone_raster, sum_or_avg, save_as):
     Returns:
         None
     """
+    zonal_stat_df = pandas.read_csv(zonal_stat_csv)
+    id_field = [
+        c for c in zonal_stat_df.columns.values.tolist() if
+        c.endswith('_id')][0]
+    zonal_stat_df.set_index(id_field, inplace=True)
+    zonal_stat_dict = zonal_stat_df.to_dict(orient='index')
     reclass_dict = {
-        zonal_stat_dict[key]: zonal_stat_dict[key][sum_or_avg]
+        key: zonal_stat_dict[key][sum_or_avg]
         for key in zonal_stat_dict.iterkeys()
     }
 
     target_datatype = gdal.GDT_Float32
     target_nodata = _TARGET_NODATA
+    if 0 not in reclass_dict:
+        reclass_dict[0] = target_nodata
     pygeoprocessing.reclassify_raster(
-        zone_raster, reclass_dict, save_as, target_datatype, target_nodata)
+        (zone_raster, 1), reclass_dict, save_as, target_datatype,
+        target_nodata)
 
 
 def nested_zonal_stats(
@@ -449,7 +476,7 @@ def pollination_workflow(workspace_dir, service_raster_path):
         data_dict['service_raster'])['pixel_size']
 
     # resampling method depends on the ratio of KBA and service pixel sizes
-    if target_pixel_size[0] / service_pixel_size[0] > 2:
+    if target_pixel_size[0] / service_pixel_size[0] > 1.5:
         resampling_method = 'average'
     else:
         resampling_method = 'nearest'
