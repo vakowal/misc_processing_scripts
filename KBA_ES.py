@@ -242,6 +242,7 @@ def zonal_stat_to_raster(zonal_stat_csv, zone_raster, sum_or_avg, save_as):
         None
     """
     zonal_stat_df = pandas.read_csv(zonal_stat_csv)
+    zonal_stat_df.fillna(value=_TARGET_NODATA, inplace=True)
     id_field = [
         c for c in zonal_stat_df.columns.values.tolist() if
         c.endswith('_id')][0]
@@ -253,12 +254,11 @@ def zonal_stat_to_raster(zonal_stat_csv, zone_raster, sum_or_avg, save_as):
     }
 
     target_datatype = gdal.GDT_Float32
-    target_nodata = _TARGET_NODATA
     if 0 not in reclass_dict:
-        reclass_dict[0] = target_nodata
+        reclass_dict[0] = _TARGET_NODATA
     pygeoprocessing.reclassify_raster(
         (zone_raster, 1), reclass_dict, save_as, target_datatype,
-        target_nodata)
+        _TARGET_NODATA)
 
 
 def nested_zonal_stats(
