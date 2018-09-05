@@ -421,27 +421,6 @@ def cv_habitat_attribution_workflow(workspace_dir):
     # mask out habitat pixels only
 
 
-def test_raster_resampling():
-    """Test using the "average" method to resample a fine resolution raster."""
-    scratch_dir = "C:/Users/ginge/Desktop/kba_scratch"
-    if not os.path.exists(scratch_dir):
-        os.makedirs(scratch_dir)
-
-    service_raster = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_en_10s_cur.tif"
-    KBA_raster = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/Mark_Mulligan_data/kbas1k/kbas1k.asc"
-
-    target_pixel_size = pygeoprocessing.get_raster_info(
-        KBA_raster)['pixel_size']
-    service_pixel_size = pygeoprocessing.get_raster_info(
-        service_raster)['pixel_size']
-    raw_input_path_list = [KBA_raster, service_raster]
-    aligned_input_path_list = [
-        os.path.join(scratch_dir, os.path.basename(r)) for r in
-        raw_input_path_list]
-    pygeoprocessing.align_and_resize_raster_stack(
-        raw_input_path_list, aligned_input_path_list,
-        ['average'] * len(aligned_input_path_list), target_pixel_size,
-        bounding_box_mode="union", raster_align_index=0)
 
 
 def process_pollination_service_rasters(workspace_dir, service_raster_list):
@@ -478,65 +457,23 @@ def process_pollination_service_rasters(workspace_dir, service_raster_list):
     if all([os.path.exists(p) for p in existing_processed_inputs]):
         return aligned_inputs_dict
 
-    # create land mask of zeroes at service raster resolution
-    template_service_raster = service_raster_list[0]
-    service_pixel_size = pygeoprocessing.get_raster_info(
-        template_service_raster)['pixel_size']
-
-    intermediate_dir = os.path.join(workspace_dir, 'intermediate')
-    if not os.path.exists(intermediate_dir):
-        os.makedirs(intermediate_dir)
-
-    # create countries mask of zeroes to mosaic into service rasters
-    # I DID THIS BY HAND IN ARC BECAUSE IT WAS TAKING FOREVER
-    countries_zero_mask_in = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/pollination_summary/intermediate/country_mask_zeroes.tif"
-    countries_zero_mask = os.path.join(
-        intermediate_dir, 'country_mask_zeroes_aligned.tif')
-    input_path_list = [
-        template_service_raster, countries_zero_mask_in]
-    aligned_path_list = [
-        os.path.join(
-            intermediate_dir, os.path.basename(template_service_raster)),
-        countries_zero_mask]
-    # pygeoprocessing.align_and_resize_raster_stack(
-    #     input_path_list, aligned_path_list,
-    #     ['nearest'] * len(aligned_path_list), service_pixel_size,
-    #     bounding_box_mode="union", raster_align_index=0)
-
-    # fill nodata areas in service rasters overlapping countries mask with 0
-    def mosaic_rasters(countries_mask_zeroes, service_raster):
-        """Mosaic values together from two rasters."""
-        mosaic = numpy.empty(countries_mask_zeroes.shape, dtype=numpy.float32)
-        mosaic[:] = _TARGET_NODATA
-        mosaic[countries_mask_zeroes != _TARGET_NODATA] = 0
-        mosaic[service_raster != service_nodata] = service_raster[
-            service_raster != service_nodata]
-        return mosaic
-
-    mosaic_dir = os.path.join(intermediate_dir, 'mosaic_countries_mask_zero')
-    if not os.path.exists(mosaic_dir):
-        os.makedirs(mosaic_dir)
-    for service_raster in service_raster_list:
-        service_nodata = pygeoprocessing.get_raster_info(
-            service_raster)['nodata'][0]
-        save_as = os.path.join(mosaic_dir, os.path.basename(service_raster))
-        pygeoprocessing.raster_calculator(
-            [(path, 1) for path in countries_zero_mask, service_raster],
-            mosaic_rasters, save_as, gdal.GDT_Float32, _TARGET_NODATA)
-
-    # resample and align zero-filled service rasters
+    # use block statistics to aggregate service to approximate KBA resolution
+    # I did this in R because ArcMap ran out of memory
+    blockstat_dir = os.path.join(workspace_dir, 'block_statistic_aggregate')
     kba_pixel_size = pygeoprocessing.get_raster_info(
         data_dict['kba_raster'])['pixel_size']
+
+    # align service rasters with KBA raster via nearest neighbor resampling
     input_path_list = (
         [data_dict['kba_raster'], data_dict['countries_mask']] +
-        [os.path.join(mosaic_dir, os.path.basename(r)) for r in
+        [os.path.join(blockstat_dir, os.path.basename(r)) for r in
             service_raster_list])
     aligned_path_list = [
         os.path.join(aligned_raster_dir, os.path.basename(r)) for r in
         input_path_list]
     pygeoprocessing.align_and_resize_raster_stack(
         input_path_list, aligned_path_list,
-        ['average'] * len(aligned_path_list), kba_pixel_size,
+        ['nearest'] * len(aligned_path_list), kba_pixel_size,
         bounding_box_mode="union", raster_align_index=0)
 
     return aligned_inputs_dict
