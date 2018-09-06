@@ -549,6 +549,62 @@ def pollination_workflow(workspace_dir):
                 os.path.basename(service_raster)))
 
 
+def area_of_kbas():
+    """Calculate the area of KBAs relative to land mask."""
+    countries_raster_path = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/Mark_Mulligan_data/onekmgaul_country__world/onekmgaul_country__world.asc"
+    kba_raster_path = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/Mark_Mulligan_data/kbas1k/kbas1k.asc"
+
+    countries_raster = gdal.OpenEx(countries_raster_path)
+    countries_band = countries_raster.GetRasterBand(1)
+
+    kba_raster = gdal.OpenEx(kba_raster_path)
+    kba_band = kba_raster.GetRasterBand(1)
+
+    try:
+        total_country_pixels = 0
+        total_kba_pixels = 0
+        last_blocksize = None
+        for block_offset in pygeoprocessing.iterblocks(
+                countries_raster_path, offset_only=True):
+            blocksize = (block_offset['win_ysize'], block_offset['win_xsize'])
+
+            if last_blocksize != blocksize:
+                countries_array = numpy.zeros(
+                    blocksize,
+                    dtype=pygeoprocessing._gdal_to_numpy_type(countries_band))
+                kba_array = numpy.zeros(
+                    blocksize,
+                    dtype=pygeoprocessing._gdal_to_numpy_type(kba_band))
+
+            countries_data = block_offset.copy()
+            countries_data['buf_obj'] = countries_array
+            countries_band.ReadAsArray(**countries_data)
+
+            kba_data = block_offset.copy()
+            kba_data['buf_obj'] = kba_array
+            kba_band.ReadAsArray(**kba_data)
+
+            country_mask = (country_array > 0)
+            kba_mask = (country_array > 0 & kba_array > 0)
+            block_country_pixels = country_array[country_mask].size()  # TODO count # pixels??
+            block_kba_pixels = country_array[kba_mask].size()
+
+            total_country_pixels += block_country_pixels
+            total_kba_pixels += block_kba_pixels
+        print "total country pixels: {}".format(total_country_pixels)
+        print "total kba pixels: {}".format(total_kba_pixels)
+        print "% kba by area: {}".format(
+            (total_kba_pixels / total_country_pixels) * 100)
+    finally:
+        countries_band = None
+        kba_band = None
+        gdal.Dataset.__swig_destroy__(countries_raster)
+        gdal.Dataset.__swig_destroy__(kba_raster)
+
+
 if __name__ == '__main__':
-    workspace_dir = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/pollination_summary"
+    workspace_dir = "F:/pollination_summary_300m"
     pollination_workflow(workspace_dir)
+    # cv_habitat_attribution_workflow(workspace_dir)
+
+
