@@ -584,17 +584,19 @@ def area_of_kbas():
             kba_data['buf_obj'] = kba_array
             kba_band.ReadAsArray(**kba_data)
 
-            country_mask = (country_array > 0)
-            kba_mask = (country_array > 0 & kba_array > 0)
-            block_country_pixels = country_array[country_mask].size()  # TODO count # pixels??
-            block_kba_pixels = country_array[kba_mask].size()
+            country_mask = (countries_array > 0)
+            kba_mask = (
+                (countries_array > 0) &
+                (kba_array > 0))
+            block_country_pixels = countries_array[country_mask].size
+            block_kba_pixels = countries_array[kba_mask].size
 
             total_country_pixels += block_country_pixels
             total_kba_pixels += block_kba_pixels
         print "total country pixels: {}".format(total_country_pixels)
         print "total kba pixels: {}".format(total_kba_pixels)
         print "% kba by area: {}".format(
-            (total_kba_pixels / total_country_pixels) * 100)
+            (float(total_kba_pixels) / float(total_country_pixels)) * 100)
     finally:
         countries_band = None
         kba_band = None
