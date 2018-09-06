@@ -551,8 +551,13 @@ def pollination_workflow(workspace_dir):
 
 def area_of_kbas():
     """Calculate the area of KBAs relative to land mask."""
-    countries_raster_path = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/Mark_Mulligan_data/onekmgaul_country__world/onekmgaul_country__world.asc"
-    kba_raster_path = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/Mark_Mulligan_data/kbas1k/kbas1k.asc"
+    # 10km scale
+    # countries_raster_path = "C:/Users/Ginger/Desktop/onekmgaul_country__world.asc"
+    # kba_raster_path = "C:/Users/Ginger/Desktop/kbas1k.asc"
+    
+    # 300m scale
+    countries_raster_path = "E:/GIS_local_8.27.18/KBA_ES/onekmgaul_country__world_300m.asc"
+    kba_raster_path = "C:/Users/Ginger/Desktop/Global_KBA_poly_terrestrial_rc_-99.tif"
 
     countries_raster = gdal.OpenEx(countries_raster_path)
     countries_band = countries_raster.GetRasterBand(1)
