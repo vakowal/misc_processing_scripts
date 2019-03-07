@@ -958,14 +958,12 @@ def cv_habitat_in_kbas(outer_workspace_dir):
             kba_data = block_offset.copy()
             kba_data['buf_obj'] = kba_array
             kba_band.ReadAsArray(**kba_data)
-
             habitat_mask = (habitat_array > 0)
             kba_mask = (
                 (habitat_array > 0) &
                 (kba_array > 0))
             block_habitat_pixels = habitat_array[habitat_mask].size
             block_kba_pixels = habitat_array[kba_mask].size
-
             total_habitat_pixels += block_habitat_pixels
             total_kba_pixels += block_kba_pixels
         area_dict['total_habitat_pixels'].append(total_habitat_pixels)
