@@ -13,79 +13,29 @@ import arcpy
 import pygeoprocessing
 from arcpy import sa
 
+arcpy.CheckOutExtension("Spatial")
+
 _TARGET_NODATA = -9999
 
 
-def base_data_dict():
+def base_data_dict(resolution):
     """Base data input locations on disk."""
-    data_dict = {
-        'kba_raster': 'C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/Mark_Mulligan_data/kbas1k/kbas1k.asc',
-        'countries_mask': 'C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/Mark_Mulligan_data/onekmgaul_country__world/onekmgaul_country__world.asc',
-    }
+    if resolution == '10km':
+        data_dict = {
+            'kba_raster': 'C:/Users/ginge/Dropbox/KBA_ES/Global_KBA_10km.tif',
+            'countries_mask': 'C:/Users/ginge/Dropbox/KBA_ES/Mark_Mulligan_data/onekmgaul_country__world/onekmgaul_country__world.asc',
+        }
+    elif resolution == '300m':
+        data_dict = {
+            'kba_raster': 'C:/Users/ginge/Dropbox/KBA_ES/Global_KBA_10s.tif',
+            'countries_mask': 'C:/Users/ginge/Dropbox/KBA_ES/onekmgaul_country_world_10s.asc',
+        }
+    elif resolution == '10kmMark':
+        data_dict = {
+            'kba_raster': 'C:/Users/ginge/Dropbox/KBA_ES/Mark_Mulligan_data/kbas1k/kbas1k.asc',
+            'countries_mask': 'C:/Users/ginge/Dropbox/KBA_ES/onekmgaul_country_world_10s.asc',
+        }
     return data_dict
-
-
-def calc_masked_sum(service_raster_path, global_land_mask):
-    """Calculate the global sum across pixels in a service raster.
-
-    Parameters:
-        service_raster_path (string): path to a raster of service provision
-            values
-        global_land_mask_path (string): path to a raster containing a mask of
-            global land areas.
-
-    Returns:
-        the sum of all valid pixels across the service raster within valid
-            areas of the global land mask
-    """
-    service_nodata = pygeoprocessing.get_raster_info(
-        service_raster_path)['nodata'][0]
-    land_mask_nodata = pygeoprocessing.get_raster_info(
-        global_land_mask)['nodata'][0]
-
-    service_raster = gdal.OpenEx(service_raster_path)
-    service_band = service_raster.GetRasterBand(1)
-
-    land_raster = gdal.OpenEx(global_land_mask)
-    land_band = land_raster.GetRasterBand(1)
-
-    try:
-        masked_sum = 0
-        last_blocksize = None
-        for block_offset in pygeoprocessing.iterblocks(
-                service_raster_path, offset_only=True):
-            blocksize = (block_offset['win_ysize'], block_offset['win_xsize'])
-
-            if last_blocksize != blocksize:
-                service_array = numpy.zeros(
-                    blocksize,
-                    dtype=pygeoprocessing._gdal_to_numpy_type(service_band))
-                land_mask_array = numpy.zeros(
-                    blocksize,
-                    dtype=pygeoprocessing._gdal_to_numpy_type(land_band))
-                last_blocksize = blocksize
-
-            service_data = block_offset.copy()
-            service_data['buf_obj'] = service_array
-            service_band.ReadAsArray(**service_data)
-
-            land_mask_data = block_offset.copy()
-            land_mask_data['buf_obj'] = land_mask_array
-            land_band.ReadAsArray(**land_mask_data)
-
-            valid_mask = (
-                (service_array != service_nodata) &
-                (land_mask_array != land_mask_nodata))
-
-            valid_block = service_array[valid_mask]
-            masked_sum += numpy.sum(valid_block)
-    finally:
-        service_band = None
-        land_band = None
-        gdal.Dataset.__swig_destroy__(service_raster)
-        gdal.Dataset.__swig_destroy__(land_raster)
-
-    return masked_sum
 
 
 def zonal_stats(service_raster_path, zonal_raster_path):
@@ -147,6 +97,10 @@ def zonal_stats(service_raster_path, zonal_raster_path):
                 valid_mask = (
                     (service_array != service_nodata) &
                     (zone_array == zone))
+                # the below was necessary for 10km CV raster
+                # valid_mask = (
+                #     (service_array > 0) &
+                #     (zone_array == zone))
                 valid_block = service_array[valid_mask]
                 zone_sum = numpy.sum(valid_block)
                 if zone_sum > 0:
@@ -362,6 +316,86 @@ def nested_zonal_stats(
     return zonal_stat_dict
 
 
+def global_kba_summary(service_raster_path, kba_raster_path):
+    """Calculate global service sum and sum of service in KBAs.
+
+    Calculate global % service inside KBAs from one service raster. Service
+    raster and KBA raster must align.
+
+    Parameters:
+        service_raster_path (string): path to raster containing service
+            values
+        kba_raster_path (string): path to raster where Key Biodiversity
+            Areas are identified by values > 0
+
+    Returns:
+        dictionary with global sum, global sum in KBA, and global percent
+            in KBA
+    """
+    service_nodata = pygeoprocessing.get_raster_info(
+        service_raster_path)['nodata'][0]
+    kba_nodata = pygeoprocessing.get_raster_info(
+        kba_raster_path)['nodata'][0]
+
+    service_raster = gdal.OpenEx(service_raster_path)
+    service_band = service_raster.GetRasterBand(1)
+
+    kba_raster = gdal.OpenEx(kba_raster_path)
+    kba_band = kba_raster.GetRasterBand(1)
+
+    try:
+        summary_dict = {
+            'global_service_sum': 0,
+            'global_service_sum_in_KBA': 0,
+        }
+        last_blocksize = None
+        for block_offset in pygeoprocessing.iterblocks(
+                service_raster_path, offset_only=True):
+            blocksize = (block_offset['win_ysize'], block_offset['win_xsize'])
+
+            if last_blocksize != blocksize:
+                service_array = numpy.zeros(
+                    blocksize,
+                    dtype=pygeoprocessing._gdal_to_numpy_type(service_band))
+                kba_array = numpy.zeros(
+                    blocksize,
+                    dtype=pygeoprocessing._gdal_to_numpy_type(kba_band))
+                last_blocksize = blocksize
+
+            service_data = block_offset.copy()
+            service_data['buf_obj'] = service_array
+            service_band.ReadAsArray(**service_data)
+
+            kba_data = block_offset.copy()
+            kba_data['buf_obj'] = kba_array
+            kba_band.ReadAsArray(**kba_data)
+
+            valid_mask = (service_array != service_nodata)
+            # the below was necessary for 10km CV raster
+            # valid_mask = (service_array > 0)
+            summary_dict['global_service_sum'] += (
+                numpy.sum(service_array[valid_mask]))
+
+            kba_mask = (
+                valid_mask &
+                (kba_array != kba_nodata) &
+                (kba_array > 0))
+            summary_dict['global_service_sum_in_KBA'] += (
+                numpy.sum(service_array[kba_mask]))
+
+        summary_dict['global_service_percent_in_KBA'] = (
+            float(summary_dict['global_service_sum_in_KBA']) /
+            summary_dict['global_service_sum'] * 100)
+
+    finally:
+        service_band = None
+        kba_band = None
+        gdal.Dataset.__swig_destroy__(service_raster)
+        gdal.Dataset.__swig_destroy__(kba_raster)
+
+    return summary_dict
+
+
 def cv_habitat_attribution_workflow(workspace_dir):
     """Use focal statistics to attribute cv service value to marine habitat.
 
@@ -371,6 +405,8 @@ def cv_habitat_attribution_workflow(workspace_dir):
     distance for that habitat type used by Rich for the IPBES analysis.
 
     Parameters:
+        workspace_dir (string): path to directory where intermediate rasters
+            and results will be stored
 
     Returns:
         None
@@ -384,51 +420,223 @@ def cv_habitat_attribution_workflow(workspace_dir):
         }
         return distance_dict[distance_meters]
 
-    cv_results_shp = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/coastal_vulnerability/CV_outputs_8.28.18/CV_outputs.shp"
-    service_field = "NCP_c"
+    def extract_by_mask(value_raster, mask_raster):
+        """Extract values from value_raster under mask_raster."""
+        valid_mask = (
+            (value_raster != value_nodata) &
+            (mask_raster != mask_nodata))
+        result = numpy.empty(value_raster.shape, dtype=numpy.float32)
+        result[:] = _TARGET_NODATA
+        result[valid_mask] = value_raster[valid_mask]
+        return result
+
+    def multiply_by_1000(value_raster):
+        """Convert float raster to int by multiplying by 1000."""
+        valid_mask = (value_raster != _TARGET_NODATA)
+        result = numpy.empty(value_raster.shape, dtype=numpy.float32)
+        result[:] = _TARGET_NODATA
+        result[valid_mask] = value_raster[valid_mask] * 1000
+        integer_result = result.astype(dtype=numpy.int16)
+        return integer_result
+
+    def mosaic_max_value(*raster_list):
+        """Mosaic maximum pixels in raster_list.
+
+        Where the rasters in raster_list overlap, keep the maximum value.
+        The rasters in raster_list are assumed to contain values >= 0
+        only.
+
+        Returns:
+            mosaic of rasters including the maximum value in overlapping
+                pixels
+        """
+        raster_copy_list = []
+        for r in raster_list:
+            r_copy = numpy.copy(r)
+            numpy.place(r_copy, numpy.isclose(r_copy, _TARGET_NODATA), [0])
+            raster_copy_list.append(r_copy)
+        max_mosaic = numpy.amax(raster_copy_list, axis=0)
+        invalid_mask = numpy.all(
+            numpy.isclose(numpy.array(raster_list), _TARGET_NODATA), axis=0)
+        max_mosaic[invalid_mask] = _TARGET_NODATA
+        return max_mosaic
+
+    cv_results_shp = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/coastal_vulnerability/CV_outputs_11.28.18/cv_11_28_18.gdb/cv_outputs_proj"
+    service_field = "Service_GK"
     habitat_dict = {
         'mangrove': {
             'risk': 1,
             'effect_distance': 1000,
+            'habitat_shp': r"C:\Users\ginge\Documents\NatCap\GIS_local\KBA_ES\IPBES_data_layers\coastal_vulnerability\habitat\DataPack-14_001_WCMC010_MangrovesUSGS2011_v1_3\01_Data\14_001_WCMC010_MangroveUSGS2011_v1_3.shp",
         },
         'saltmarsh': {
             'risk': 2,
             'effect_distance': 1000,
+            'habitat_shp': r"C:\Users\ginge\Documents\NatCap\GIS_local\KBA_ES\IPBES_data_layers\coastal_vulnerability\habitat\datapack-14_001_wcmc027_saltmarsh2017_v4\01_Data\14_001_WCMC027_Saltmarsh_py_v4.shp",
         },
         'coralreef': {
             'risk': 1,
             'effect_distance': 2000,
+            'habitat_shp': r"C:\Users\ginge\Documents\NatCap\GIS_local\KBA_ES\IPBES_data_layers\coastal_vulnerability\habitat\DataPack-14_001_WCMC008_CoralReef2010_v1_3\01_Data\14_001_WCMC008_CoralReef2010_v1_3.shp",
         },
         'seagrass': {
             'risk': 4,
             'effect_distance': 500,
+            'habitat_shp': r"C:\Users\ginge\Documents\NatCap\GIS_local\KBA_ES\IPBES_data_layers\coastal_vulnerability\habitat\datapack-14_001_wcmc013_014_seagrassptpy_v4\01_Data\WCMC_013_014_SeagrassesPy_v4.shp",
         },
     }
     # moving window analysis: mean of service values within effect distance
     # of each pixel
+    masked_habitat_list = []
     for habitat_type in habitat_dict.iterkeys():
         effect_distance = convert_m_to_deg_equator(
-            habitat_dict[habitat_type]['effect_distance'])
+                habitat_dict[habitat_type]['effect_distance'])
         target_pixel_size = effect_distance / 2
-        neighborhood = arcpy.sa.NbrCircle(effect_distance, "MAP")
-        save_as = os.path.join(
-            workspace_dir, 'point_statistics_{}.tif'.format(habitat_type))
-        point_statistics_raster = arcpy.sa.PointStatistics(
-            cv_results_shp, field=service_field, cell_size=target_pixel_size,
-            neighborhood=neighborhood, statistics_type="MEAN")
-        point_statistics_raster.save(save_as)
+        point_stat_raster_path = os.path.join(
+            workspace_dir, 'pt_st_{}.tif'.format(habitat_type[:3]))
+        if not os.path.exists(point_stat_raster_path):
+            neighborhood = arcpy.sa.NbrCircle(effect_distance, "MAP")
+            point_statistics_raster = arcpy.sa.PointStatistics(
+                cv_results_shp, field=service_field,
+                cell_size=target_pixel_size, neighborhood=neighborhood,
+                statistics_type="MEAN")
+            point_statistics_raster.save(point_stat_raster_path)
 
-    # mask out habitat pixels only
+        # habitat polygons to raster, aligned with point statistics raster
+        habitat_raster_path = os.path.join(
+            workspace_dir, 'habitat_{}.tif'.format(habitat_type[:3]))
+        if not os.path.exists(habitat_raster_path):
+            if "grid_code" in arcpy.ListFields(
+                    habitat_dict[habitat_type]['habitat_shp']):
+                raster_field = "grid_code"
+            else:
+                raster_field = "FID"
+            arcpy.env.cellSize = point_stat_raster_path
+            arcpy.env.snapRaster = point_stat_raster_path
+            arcpy.PolygonToRaster_conversion(
+                habitat_dict[habitat_type]['habitat_shp'], raster_field,
+                habitat_raster_path, cell_assignment="MAXIMUM_AREA")
+
+        # align habitat raster with point stat raster exactly
+        rasters_to_align = [point_stat_raster_path, habitat_raster_path]
+        aligned_rasters = [
+            os.path.join(workspace_dir, '{}_aligned.tif'.format(
+                os.path.basename(r)[:-4])) for r in rasters_to_align]
+        if not all([os.path.exists(p) for p in aligned_rasters]):
+            pygeoprocessing.align_and_resize_raster_stack(
+                rasters_to_align, aligned_rasters,
+                ['near'] * len(rasters_to_align),
+                (target_pixel_size, target_pixel_size),
+                bounding_box_mode="union")
+
+        # mask out habitat pixels from point statistics raster
+        point_stat_habitat_path = os.path.join(
+            workspace_dir, 'pt_st_hab_{}.tif'.format(habitat_type[:3]))
+        if not os.path.exists(point_stat_habitat_path):
+            value_raster = os.path.join(
+                workspace_dir, '{}_aligned.tif'.format(
+                    os.path.basename(point_stat_raster_path)[:-4]))
+            mask_raster = os.path.join(
+                workspace_dir, '{}_aligned.tif'.format(
+                    os.path.basename(habitat_raster_path)[:-4]))
+            value_nodata = pygeoprocessing.get_raster_info(
+                value_raster)['nodata'][0]
+            mask_nodata = pygeoprocessing.get_raster_info(
+                mask_raster)['nodata'][0]
+            pygeoprocessing.raster_calculator(
+                [(path, 1) for path in [
+                    value_raster, mask_raster]],
+                extract_by_mask, point_stat_habitat_path, gdal.GDT_Float32,
+                _TARGET_NODATA)
+        masked_habitat_list.append(point_stat_habitat_path)
+
+    # try saving memory by saving to int
+    int_raster_list = []
+    for habitat_raster in masked_habitat_list:
+        int_raster_path = os.path.join(
+            workspace_dir,
+            '{}_x1000.tif'.format(os.path.basename(habitat_raster)[:-4]))
+        if not os.path.exists(int_raster_path):
+            pygeoprocessing.raster_calculator(
+                [(habitat_raster, 1)], multiply_by_1000, int_raster_path,
+                gdal.GDT_Int16, _TARGET_NODATA)
+        int_raster_list.append(int_raster_path)
+
+    # do it in Arc
+    pygeoprocessing.new_raster_from_base(
+        os.path.join(workspace_dir, 'pt_st_hab_cor_x1000.tif'),
+        os.path.join(workspace_dir, 'service_mosaic.tif'), gdal.GDT_Int16,
+        band_nodata_list=[_TARGET_NODATA], fill_value_list=[_TARGET_NODATA])
+    # arcpy.MosaicToNewRaster_management(input_rasters="pt_st_hab_sea_x1000.tif;
+    #   pt_st_hab_cor_x1000.tif;pt_st_hab_sal_x1000.tif;pt_st_hab_man_x1000.tif",
+    #   output_location="C:/Users/ginge/Desktop/CV",
+    #   raster_dataset_name_with_extension="service_mosaic.tif",
+    #   coordinate_system_for_the_raster="GEOGCS[
+    #     'GCS_WGS_1984',DATUM['D_WGS_1984',SPHEROID['WGS_1984',6378137.0,
+    #     298.257223563]],PRIMEM['Greenwich',0.0],UNIT['Degree',
+    #     0.0174532925199433]]", pixel_type="16_BIT_SIGNED", cellsize="",
+    #   number_of_bands="1", mosaic_method="MAXIMUM",
+    #   mosaic_colormap_mode="FIRST")
+    return
+
+    # combine masked habitat pixels across habitat types
+    attributed_service_path = os.path.join(
+        workspace_dir, 'attributed_service.tif')
+    aligned_dir = os.path.join(workspace_dir, 'aligned_habitat')
+    if not os.path.exists(aligned_dir):
+        os.makedirs(aligned_dir)
+    aligned_habitat_list = [
+        os.path.join(
+            aligned_dir, os.path.basename(r)) for r in int_raster_list]
+    if not all([os.path.exists(p) for p in aligned_habitat_list]):
+        max_pixel_size = max(
+            [habitat_dict[i]['effect_distance'] / 2 for i in
+                habitat_dict.iterkeys()])
+        pygeoprocessing.align_and_resize_raster_stack(
+            int_raster_list, aligned_habitat_list,
+            ['near'] * len(int_raster_list), (max_pixel_size, max_pixel_size),
+            bounding_box_mode="union", raster_align_index=1)
+    pygeoprocessing.raster_calculator(
+        [(path, 1) for path in aligned_habitat_list], mosaic_max_value,
+        attributed_service_path, gdal.GDT_Float32, _TARGET_NODATA)
 
 
+def service_field_cv_shp():
+    """Create service field from text field "Service_cu"."""
+    # cv_results_shp = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/coastal_vulnerability/CV_outputs_11.28.18/main.CV_outputs"
+    cv_results_shp = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/coastal_vulnerability/CV_outputs_11.28.18/cv_11_28_18.gdb/main_CV_outputs"
+    # arcpy.AddField_management(cv_results_shp, "Service_GK", field_type="FLOAT")
+    service_avg = 0
+    editing_workspace = os.path.dirname(cv_results_shp)
+    with arcpy.da.Editor(editing_workspace) as edit:
+        with arcpy.da.UpdateCursor(
+                cv_results_shp, ['Service_cur', 'Service_GK']) as cursor:
+            for row in cursor:
+                service_fl = float(row[0])
+                row[1] = service_fl
+                cursor.updateRow(row)
 
 
-def process_pollination_service_rasters(workspace_dir, service_raster_list):
+def cv_field_check():
+    """Check that the service values in the cv raster are correct."""
+    cv_results_shp = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/coastal_vulnerability/CV_outputs_11.28.18/cv_11_28_18.gdb/main_CV_outputs"
+    field_dict = {'Rt_cur': [], 'Rtnohab_cur': [], 'Service_cur': []}
+    with arcpy.da.SearchCursor(
+            cv_results_shp,
+            ['Rt_cur', 'Rtnohab_cur', 'Service_cur']) as cursor:
+        for row in cursor:
+            field_dict['Rt_cur'].append(row[0])
+            field_dict['Rtnohab_cur'].append(row[1])
+            field_dict['Service_cur'].append(row[2])
+    field_df = pandas.DataFrame(data=field_dict)
+    field_df.to_csv("C:/Users/ginge/Desktop/field_df.csv", index=False)
+
+
+def process_pollination_service_rasters(
+        workspace_dir, service_raster_list, resolution):
     """Process service rasters for summarizing via KBA and country zonal stats.
 
-    First reclassify areas of nodata in the service rasters under the country
-    mask to zero. Then resample service rasters to match KBA and country
-    rasters.
+    Resample service rasters to match KBA and country rasters.
 
     Parameters:
         workspace_dir (string): path to directory where intermediate and output
@@ -436,12 +644,15 @@ def process_pollination_service_rasters(workspace_dir, service_raster_list):
         service_raster_list (list): list of paths to raw service rasters that
             should be pre-processed prior to summarizing via country and KBA
             zonal stats
+        resolution (string): scale or resolution of the analysis
 
     Returns:
         dictionary of aligned inputs
     """
-    data_dict = base_data_dict()
+    data_dict = base_data_dict(resolution)
     aligned_raster_dir = os.path.join(workspace_dir, 'aligned_inputs')
+    if not os.path.exists(aligned_raster_dir):
+        os.makedirs(aligned_raster_dir)
     aligned_inputs_dict = {
         'kba_raster': os.path.join(
             aligned_raster_dir, os.path.basename(data_dict['kba_raster'])),
@@ -462,149 +673,408 @@ def process_pollination_service_rasters(workspace_dir, service_raster_list):
     blockstat_dir = os.path.join(workspace_dir, 'block_statistic_aggregate')
     kba_pixel_size = pygeoprocessing.get_raster_info(
         data_dict['kba_raster'])['pixel_size']
+    service_pixel_size = pygeoprocessing.get_raster_info(
+        service_raster_list[0])['pixel_size']
 
-    # align service rasters with KBA raster via nearest neighbor resampling
-    input_path_list = (
-        [data_dict['kba_raster'], data_dict['countries_mask']] +
-        [os.path.join(blockstat_dir, os.path.basename(r)) for r in
-            service_raster_list])
+    # align service rasters with KBA raster via near neighbor resampling
+    if resolution == "10km" or resolution == "10kmMark":
+        input_path_list = (
+            [data_dict['kba_raster'], data_dict['countries_mask']] +
+            [os.path.join(blockstat_dir, os.path.basename(r)) for r in
+                service_raster_list])
+    else:
+        input_path_list = (
+            [data_dict['kba_raster'], data_dict['countries_mask']] +
+            service_raster_list)
     aligned_path_list = [
         os.path.join(aligned_raster_dir, os.path.basename(r)) for r in
         input_path_list]
     pygeoprocessing.align_and_resize_raster_stack(
         input_path_list, aligned_path_list,
-        ['nearest'] * len(aligned_path_list), kba_pixel_size,
+        ['near'] * len(aligned_path_list), kba_pixel_size,
         bounding_box_mode="union", raster_align_index=0)
-
     return aligned_inputs_dict
 
 
-def pollination_workflow(workspace_dir):
+def pollination_workflow(outer_workspace_dir):
     """Frame out workflow to summarize one service raster.
 
     Parameters:
-        workspace_dir (string): path to folder where outputs will be created
+        outer_workspace_dir (string): path to folder where outputs will be
+            created
 
     Returns:
         none
     """
     service_raster_list = [
-        "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_en_10s_cur.tif",
-        "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_fo_10s_cur.tif",
-        "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_va_10s_cur.tif",
+        "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_en_10s_ESACCI_LC_L4_LCSS.tif",
+        "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_fo_10s_ESACCI_LC_L4_LCSS.tif",
+        "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_va_10s_ESACCI_LC_L4_LCSS.tif",
     ]
-    aligned_inputs = process_pollination_service_rasters(
-        workspace_dir, service_raster_list)
+    global_summary_dict = {
+        'spatial_resolution': [],
+        'service': [],
+        'global_service_sum': [],
+        'global_service_sum_in_KBA': [],
+        'global_service_percent_in_KBA': [],
+        }
+    for resolution in ['10kmMark', '10km', '300m']:
+        workspace_dir = os.path.join(outer_workspace_dir, resolution)
+        if not os.path.exists(workspace_dir):
+            os.makedirs(workspace_dir)
+        aligned_inputs = process_pollination_service_rasters(
+            workspace_dir, service_raster_list, resolution)
+        # rescale to 0 - 1?
+        # combine the 3 nutrients?
 
-    # TODO rescale to 0 - 1?
-    # TODO how to combine the 3 nutrients?
+        result_dir = os.path.join(workspace_dir, 'summary_tables_and_maps')
+        if not os.path.exists(result_dir):
+            os.makedirs(result_dir)
 
-    result_dir = os.path.join(workspace_dir, 'summary_tables_and_maps')
-    if not os.path.exists(result_dir):
-        os.makedirs(result_dir)
+        # spatial summaries
+        for service_raster in aligned_inputs['service_raster_list']:
+            # global summary of service sum and sum in KBAs
+            summary_dict = global_kba_summary(
+                service_raster, aligned_inputs['kba_raster'])
+            global_summary_dict['spatial_resolution'].append(resolution)
+            global_summary_dict['service'].append(
+                os.path.basename(service_raster))
+            global_summary_dict['global_service_sum'].append(
+                summary_dict['global_service_sum'])
+            global_summary_dict['global_service_sum_in_KBA'].append(
+                summary_dict['global_service_sum_in_KBA'])
+            global_summary_dict['global_service_percent_in_KBA'].append(
+                summary_dict['global_service_percent_in_KBA'])
 
-    # spatial summaries
-    for service_raster in aligned_inputs['service_raster_list']:
+            # sum and average of service values within each KBA
+            service_by_KBA = zonal_stats(
+                service_raster, aligned_inputs['kba_raster'])
+            KBA_zonal_stat_csv = os.path.join(
+                result_dir, "zonal_stats_by_KBA_{}_{}.csv".format(
+                    os.path.basename(service_raster), resolution))
+            # zonal_stats_to_csv(service_by_KBA, 'KBA_id', KBA_zonal_stat_csv)
+            avg_by_KBA_raster = os.path.join(
+                result_dir, "average_service_by_KBA_{}.tif".format(
+                    os.path.basename(service_raster)))
+            zonal_stat_to_raster(
+                KBA_zonal_stat_csv, aligned_inputs['kba_raster'], 'average',
+                avg_by_KBA_raster)
+            sum_by_KBA_raster = os.path.join(
+                result_dir, "sum_service_by_KBA_{}.tif".format(
+                    os.path.basename(service_raster)))
+            zonal_stat_to_raster(
+                KBA_zonal_stat_csv, aligned_inputs['kba_raster'], 'sum',
+                sum_by_KBA_raster)
+
+            # sum and average of service values within each country
+            service_by_country = zonal_stats(
+                service_raster, aligned_inputs['countries_mask'])
+            service_in_KBA_by_country = nested_zonal_stats(
+                service_raster, aligned_inputs['countries_mask'],
+                aligned_inputs['kba_raster'])
+            country_zonal_stat_csv = os.path.join(
+                result_dir, "zonal_stats_by_country_{}_{}.csv".format(
+                    os.path.basename(service_raster), resolution))
+            summarize_nested_zonal_stats(
+                service_by_country, service_in_KBA_by_country,
+                country_zonal_stat_csv)
+            proportion_in_kba_by_country_raster = os.path.join(
+                result_dir,
+                "proportion_sum_service_in_kba_by_country_{}_{}.tif".format(
+                    os.path.basename(service_raster), resolution))
+            zonal_stat_to_raster(
+                country_zonal_stat_csv, aligned_inputs['countries_mask'],
+                'proportion_service_in_KBAs',
+                proportion_in_kba_by_country_raster)
+    global_summary_df = pandas.DataFrame(data=global_summary_dict)
+    global_summary_df.to_csv(os.path.join(
+        outer_workspace_dir, 'global_service_summary.csv'), index=False)
+
+
+def coastal_vulnerability_workflow(outer_workspace_dir):
+    """Summarize coastal vulnerability service in and outside KBAs.
+
+    Parameters:
+        outer_workspace_dir (string): path to folder where outputs
+            will be created
+
+    Returns:
+        None
+    """
+    service_raster = "C:/Users/ginge/Dropbox/KBA_ES/CV_summary_11.30.18/habitat_attribution_rasters/service_mosaic.tif"
+    global_summary_dict = {
+        'spatial_resolution': [],
+        'service': [],
+        'global_service_sum': [],
+        'global_service_sum_in_KBA': [],
+        'global_service_percent_in_KBA': [],
+        }
+    for resolution in ['10km', '300m']:
+        workspace_dir = os.path.join(outer_workspace_dir, resolution)
+        if not os.path.exists(workspace_dir):
+            os.makedirs(workspace_dir)
+        aligned_inputs = process_cv_rasters(
+            workspace_dir, service_raster, resolution)
+        result_dir = os.path.join(workspace_dir, 'summary_tables_and_maps')
+        if not os.path.exists(result_dir):
+            os.makedirs(result_dir)
+
+        # global summary of service sum and sum in KBAs
+        summary_dict = global_kba_summary(
+            aligned_inputs['service_raster'], aligned_inputs['kba_raster'])
+        global_summary_dict['spatial_resolution'].append(resolution)
+        global_summary_dict['service'].append('coastal_vulnerability')
+        global_summary_dict['global_service_sum'].append(
+            summary_dict['global_service_sum'])
+        global_summary_dict['global_service_sum_in_KBA'].append(
+            summary_dict['global_service_sum_in_KBA'])
+        global_summary_dict['global_service_percent_in_KBA'].append(
+            summary_dict['global_service_percent_in_KBA'])
+
         # sum and average of service values within each KBA
-        service_by_KBA = zonal_stats(
-            service_raster, aligned_inputs['kba_raster'])
-        KBA_zonal_stat_csv = os.path.join(
-            result_dir, "zonal_stats_by_KBA_{}.csv".format(
-                os.path.basename(service_raster)))
-        zonal_stats_to_csv(service_by_KBA, 'KBA_id', KBA_zonal_stat_csv)
-        avg_by_KBA_raster = os.path.join(
-            result_dir, "average_service_by_KBA_{}.tif".format(
-                os.path.basename(service_raster)))
-        zonal_stat_to_raster(
-            KBA_zonal_stat_csv, aligned_inputs['kba_raster'], 'average',
-            avg_by_KBA_raster)
-        sum_by_KBA_raster = os.path.join(
-            result_dir, "sum_service_by_KBA_{}.tif".format(
-                os.path.basename(service_raster)))
-        zonal_stat_to_raster(
-            KBA_zonal_stat_csv, aligned_inputs['kba_raster'], 'sum',
-            sum_by_KBA_raster)
-
-        # sum and average of service values within each country
-        service_by_country = zonal_stats(
-            service_raster, aligned_inputs['countries_mask'])
-        service_in_KBA_by_country = nested_zonal_stats(
-            service_raster, aligned_inputs['countries_mask'],
-            aligned_inputs['kba_raster'])
-        country_zonal_stat_csv = os.path.join(
-            result_dir, "zonal_stats_by_country_{}.csv".format(
-                os.path.basename(service_raster)))
-        summarize_nested_zonal_stats(
-            service_by_country, service_in_KBA_by_country,
-            country_zonal_stat_csv)
-        proportion_in_kba_by_country_raster = os.path.join(
-            result_dir,
-            "proportion_sum_service_in_kba_by_country_{}.tif".format(
-                os.path.basename(service_raster)))
-        zonal_stat_to_raster(
-            country_zonal_stat_csv, aligned_inputs['countries_mask'],
-            'proportion_service_in_KBAs', proportion_in_kba_by_country_raster)
-        sum_by_country_raster = os.path.join(
-            result_dir, "sum_service_by_country_{}.tif".format(
-                os.path.basename(service_raster)))
+        # service_by_KBA = zonal_stats(
+        #     aligned_inputs['service_raster'], aligned_inputs['kba_raster'])
+        # KBA_zonal_stat_csv = os.path.join(
+        #     result_dir, "zonal_stats_by_KBA_{}_{}.csv".format(
+        #         os.path.basename(service_raster), resolution))
+        # zonal_stats_to_csv(service_by_KBA, 'KBA_id', KBA_zonal_stat_csv)
+        # avg_by_KBA_raster = os.path.join(
+        #     result_dir, "average_service_by_KBA_{}.tif".format(
+        #         os.path.basename(service_raster)))
+        # zonal_stat_to_raster(
+        #     KBA_zonal_stat_csv, aligned_inputs['kba_raster'], 'average',
+        #     avg_by_KBA_raster)
+        # sum_by_KBA_raster = os.path.join(
+        #     result_dir, "sum_service_by_KBA_{}.tif".format(
+        #         os.path.basename(service_raster)))
+        # zonal_stat_to_raster(
+        #     KBA_zonal_stat_csv, aligned_inputs['kba_raster'], 'sum',
+        #     sum_by_KBA_raster)
+    global_summary_df = pandas.DataFrame(data=global_summary_dict)
+    global_summary_df.to_csv(os.path.join(
+        outer_workspace_dir, 'global_service_summary_TEST.csv'), index=False)
 
 
-def area_of_kbas():
-    """Calculate the area of KBAs relative to land mask."""
-    countries_raster_path = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/Mark_Mulligan_data/onekmgaul_country__world/onekmgaul_country__world.asc"
-    kba_raster_path = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/Mark_Mulligan_data/kbas1k/kbas1k.asc"
+def process_cv_rasters(workspace_dir, service_raster, resolution):
+    """Align and resample service raster with KBA raster prior to zonal stats.
 
-    countries_raster = gdal.OpenEx(countries_raster_path)
-    countries_band = countries_raster.GetRasterBand(1)
+    Resample coastal vulnerability service raster to match KBA raster.
+
+    Parameters:
+        workspace_dir (string): path to directory where intermediate and output
+            datasets will be written
+        service_raster (string): path to raw service raster that should be
+            pre-processed prior to summarizing via KBA zonal stats
+        resolution (string): scale or resolution of the analysis
+
+    Returns:
+        dictionary of aligned inputs
+    """
+    data_dict = base_data_dict(resolution)
+    aligned_raster_dir = os.path.join(workspace_dir, 'aligned_inputs')
+    if not os.path.exists(aligned_raster_dir):
+        os.makedirs(aligned_raster_dir)
+    aligned_inputs_dict = {
+        'kba_raster': os.path.join(
+            aligned_raster_dir, os.path.basename(data_dict['kba_raster'])),
+        'service_raster': os.path.join(
+            aligned_raster_dir, os.path.basename(service_raster))
+    }
+    if all([os.path.exists(r) for r in aligned_inputs_dict.iterkeys()]):
+        return aligned_inputs_dict
+
+    # use block statistics to aggregate service to approximate KBA resolution
+    # I did this in R because ArcMap ran out of memory
+    blockstat_dir = os.path.join(workspace_dir, 'block_statistic_aggregate')
+    kba_pixel_size = pygeoprocessing.get_raster_info(
+        data_dict['kba_raster'])['pixel_size']
+    service_pixel_size = pygeoprocessing.get_raster_info(
+        service_raster)['pixel_size']
+
+    # align service rasters with KBA raster via near neighbor resampling
+    if resolution == "10km" or resolution == "10kmMark":
+        input_path_list = [
+            data_dict['kba_raster'], os.path.join(
+                blockstat_dir, os.path.basename(service_raster))]
+    else:
+        input_path_list = [
+            data_dict['kba_raster'], service_raster]
+    aligned_path_list = [
+        os.path.join(aligned_raster_dir, os.path.basename(r)) for r in
+        input_path_list]
+    pygeoprocessing.align_and_resize_raster_stack(
+        input_path_list, aligned_path_list,
+        ['near'] * len(aligned_path_list), kba_pixel_size,
+        bounding_box_mode="union", raster_align_index=0)
+    return aligned_inputs_dict
+
+
+def cv_habitat_in_kbas(outer_workspace_dir):
+    """Calculate the total area of marine habitat falling inside KBAs.
+
+    Summarize the area of habitat within KBAs (analogous to total land area
+    for pollination service). The habitat raster is a mosaic of all marine
+    habitat types, where I did the mosaic operation in Arc.
+
+    Returns:
+        none
+    """
+    area_dict = {
+        'total_habitat_pixels': [],
+        'habitat_in_KBA_pixels': [],
+        'KBA_percent_of_habitat_pixels': [],
+    }
+    habitat_raster_path = r"C:\Users\ginge\Dropbox\KBA_ES\CV_summary_11.30.18\habitat_attribution_rasters\habitat_mosaic_10km.tif"
+    kba_raster_path = r"C:\Users\ginge\Dropbox\KBA_ES\CV_summary_11.30.18\10km\aligned_inputs\Global_KBA_10km.tif"
+
+    habitat_raster = gdal.OpenEx(habitat_raster_path)
+    habitat_band = habitat_raster.GetRasterBand(1)
 
     kba_raster = gdal.OpenEx(kba_raster_path)
     kba_band = kba_raster.GetRasterBand(1)
 
     try:
-        total_country_pixels = 0
+        total_habitat_pixels = 0
         total_kba_pixels = 0
         last_blocksize = None
         for block_offset in pygeoprocessing.iterblocks(
-                countries_raster_path, offset_only=True):
-            blocksize = (block_offset['win_ysize'], block_offset['win_xsize'])
+                habitat_raster_path, offset_only=True):
+            blocksize = (
+                block_offset['win_ysize'], block_offset['win_xsize'])
 
             if last_blocksize != blocksize:
-                countries_array = numpy.zeros(
+                habitat_array = numpy.zeros(
                     blocksize,
-                    dtype=pygeoprocessing._gdal_to_numpy_type(countries_band))
+                    dtype=pygeoprocessing._gdal_to_numpy_type(
+                        habitat_band))
                 kba_array = numpy.zeros(
                     blocksize,
                     dtype=pygeoprocessing._gdal_to_numpy_type(kba_band))
 
-            countries_data = block_offset.copy()
-            countries_data['buf_obj'] = countries_array
-            countries_band.ReadAsArray(**countries_data)
+            habitat_data = block_offset.copy()
+            habitat_data['buf_obj'] = habitat_array
+            habitat_band.ReadAsArray(**habitat_data)
 
             kba_data = block_offset.copy()
             kba_data['buf_obj'] = kba_array
             kba_band.ReadAsArray(**kba_data)
 
-            country_mask = (country_array > 0)
-            kba_mask = (country_array > 0 & kba_array > 0)
-            block_country_pixels = country_array[country_mask].size()  # TODO count # pixels??
-            block_kba_pixels = country_array[kba_mask].size()
+            habitat_mask = (habitat_array > 0)
+            kba_mask = (
+                (habitat_array > 0) &
+                (kba_array > 0))
+            block_habitat_pixels = habitat_array[habitat_mask].size
+            block_kba_pixels = habitat_array[kba_mask].size
 
-            total_country_pixels += block_country_pixels
+            total_habitat_pixels += block_habitat_pixels
             total_kba_pixels += block_kba_pixels
-        print "total country pixels: {}".format(total_country_pixels)
-        print "total kba pixels: {}".format(total_kba_pixels)
-        print "% kba by area: {}".format(
-            (total_kba_pixels / total_country_pixels) * 100)
+        area_dict['total_habitat_pixels'].append(total_habitat_pixels)
+        area_dict['habitat_in_KBA_pixels'].append(total_kba_pixels)
+        area_dict['KBA_percent_of_habitat_pixels'].append(
+            (float(total_kba_pixels) / total_habitat_pixels) * 100)
     finally:
-        countries_band = None
+        habitat_band = None
         kba_band = None
-        gdal.Dataset.__swig_destroy__(countries_raster)
+        gdal.Dataset.__swig_destroy__(habitat_raster)
         gdal.Dataset.__swig_destroy__(kba_raster)
+
+    area_summary_df = pandas.DataFrame(data=area_dict)
+    area_summary_df.to_csv(os.path.join(
+        outer_workspace_dir, 'KBA_area_summary.csv'), index=False)
+
+
+def area_of_kbas(outer_workspace_dir):
+    """Calculate the area of KBAs relative to land mask.
+
+    For three spatial resolutions, calculate the percent of pixels covered by
+    KBAs within the countries mask used to aggregate terrestrial results.
+
+    Parameters:
+        outer_workspace_dir (string): directory where summary csv will be
+            stored
+
+    Returns:
+        None
+    """
+    area_dict = {
+        'spatial_resolution': [],
+        'total_land_pixels': [],
+        'KBA_pixels': [],
+        'KBA_percent_of_land_pixels': [],
+    }
+    service_raster_list = [
+        "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/pollination/prod_poll_dep_realized_en_10s_ESACCI_LC_L4_LCSS.tif"]
+    for resolution in ['10kmMark', '10km', '300m']:
+        workspace_dir = os.path.join(outer_workspace_dir, resolution)
+        if not os.path.exists(workspace_dir):
+            os.makedirs(workspace_dir)
+        aligned_inputs = process_pollination_service_rasters(
+            workspace_dir, service_raster_list, resolution)
+
+        countries_raster_path = aligned_inputs['countries_mask']
+        kba_raster_path = aligned_inputs['kba_raster']
+
+        countries_raster = gdal.OpenEx(countries_raster_path)
+        countries_band = countries_raster.GetRasterBand(1)
+
+        kba_raster = gdal.OpenEx(kba_raster_path)
+        kba_band = kba_raster.GetRasterBand(1)
+
+        try:
+            total_land_pixels = 0
+            total_kba_pixels = 0
+            last_blocksize = None
+            for block_offset in pygeoprocessing.iterblocks(
+                    countries_raster_path, offset_only=True):
+                blocksize = (
+                    block_offset['win_ysize'], block_offset['win_xsize'])
+
+                if last_blocksize != blocksize:
+                    countries_array = numpy.zeros(
+                        blocksize,
+                        dtype=pygeoprocessing._gdal_to_numpy_type(
+                            countries_band))
+                    kba_array = numpy.zeros(
+                        blocksize,
+                        dtype=pygeoprocessing._gdal_to_numpy_type(kba_band))
+
+                countries_data = block_offset.copy()
+                countries_data['buf_obj'] = countries_array
+                countries_band.ReadAsArray(**countries_data)
+
+                kba_data = block_offset.copy()
+                kba_data['buf_obj'] = kba_array
+                kba_band.ReadAsArray(**kba_data)
+
+                country_mask = (countries_array > 0)
+                kba_mask = (
+                    (countries_array > 0) &
+                    (kba_array > 0))
+                block_land_pixels = countries_array[country_mask].size
+                block_kba_pixels = countries_array[kba_mask].size
+
+                total_land_pixels += block_land_pixels
+                total_kba_pixels += block_kba_pixels
+            area_dict['spatial_resolution'].append(resolution)
+            area_dict['total_land_pixels'].append(total_land_pixels)
+            area_dict['KBA_pixels'].append(total_kba_pixels)
+            area_dict['KBA_percent_of_land_pixels'].append(
+                (float(total_kba_pixels) / total_land_pixels) * 100)
+        finally:
+            countries_band = None
+            kba_band = None
+            gdal.Dataset.__swig_destroy__(countries_raster)
+            gdal.Dataset.__swig_destroy__(kba_raster)
+
+    area_summary_df = pandas.DataFrame(data=area_dict)
+    area_summary_df.to_csv(os.path.join(
+        outer_workspace_dir, 'KBA_area_summary.csv'), index=False)
 
 
 if __name__ == '__main__':
-    workspace_dir = "F:/pollination_summary_300m"
-    pollination_workflow(workspace_dir)
-    # cv_habitat_attribution_workflow(workspace_dir)
-
-
+    # outer_workspace_dir = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/pollination_summary_11.30.18"
+    # pollination_workflow(workspace_dir)
+    # area_of_kbas(outer_workspace_dir)
+    outer_workspace_dir = r"C:\Users\ginge\Dropbox\KBA_ES\CV_summary_11.30.18"
+    # coastal_vulnerability_workflow(outer_workspace_dir)
+    cv_habitat_in_kbas(outer_workspace_dir)
