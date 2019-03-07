@@ -4,16 +4,17 @@ Calculate the spatial intersection of ecosystem service (ES) provision from
 IP-BES results with areas protected as Key Biodiversity Areas (KBA).
 """
 import os
+import tempfile
 
 from osgeo import gdal
 import numpy
 import pandas
-import arcpy
+# import arcpy
 
 import pygeoprocessing
-from arcpy import sa
+# from arcpy import sa
 
-arcpy.CheckOutExtension("Spatial")
+# arcpy.CheckOutExtension("Spatial")
 
 _TARGET_NODATA = -9999
 
@@ -71,7 +72,7 @@ def zonal_stats(service_raster_path, zonal_raster_path):
         zonal_stat_dict = {}
         last_blocksize = None
         for block_offset in pygeoprocessing.iterblocks(
-                zonal_raster_path, offset_only=True):
+                (zonal_raster_path, 1), offset_only=True):
             blocksize = (block_offset['win_ysize'], block_offset['win_xsize'])
 
             if last_blocksize != blocksize:
@@ -256,7 +257,7 @@ def nested_zonal_stats(
         zonal_stat_dict = {}
         last_blocksize = None
         for block_offset in pygeoprocessing.iterblocks(
-                country_raster_path, offset_only=True):
+                (country_raster_path, 1), offset_only=True):
             blocksize = (block_offset['win_ysize'], block_offset['win_xsize'])
 
             if last_blocksize != blocksize:
@@ -350,7 +351,7 @@ def global_kba_summary(service_raster_path, kba_raster_path):
         }
         last_blocksize = None
         for block_offset in pygeoprocessing.iterblocks(
-                service_raster_path, offset_only=True):
+                (service_raster_path, 1), offset_only=True):
             blocksize = (block_offset['win_ysize'], block_offset['win_xsize'])
 
             if last_blocksize != blocksize:
@@ -938,7 +939,7 @@ def cv_habitat_in_kbas(outer_workspace_dir):
         total_kba_pixels = 0
         last_blocksize = None
         for block_offset in pygeoprocessing.iterblocks(
-                habitat_raster_path, offset_only=True):
+                (habitat_raster_path, 1), offset_only=True):
             blocksize = (
                 block_offset['win_ysize'], block_offset['win_xsize'])
 
@@ -1023,7 +1024,7 @@ def area_of_kbas(outer_workspace_dir):
             total_kba_pixels = 0
             last_blocksize = None
             for block_offset in pygeoprocessing.iterblocks(
-                    countries_raster_path, offset_only=True):
+                    (countries_raster_path, 1), offset_only=True):
                 blocksize = (
                     block_offset['win_ysize'], block_offset['win_xsize'])
 
@@ -1069,10 +1070,65 @@ def area_of_kbas(outer_workspace_dir):
         outer_workspace_dir, 'KBA_area_summary.csv'), index=False)
 
 
+def carbon_workflow():
+    """Summarize carbon in KBAs and total global carbon.
+
+    Carbon data are stored in tiled rasters. Instead of mosaicking the tiles
+    together into one global raster, process each tile separately.
+
+    Parameters:
+
+    Returns:
+        None
+    """
+    # directory containing tiles: aboveground live woody biomass in 2000
+    alwb_dir = "F:/GFW_ALWBD_2000"
+    kba_shp = "C:/Users/ginge/Dropbox/KBA_ES/Mark_Mulligan_data/Global_KBA_poly/Global_KBA_poly.shp"
+    template_10km_raster = 'C:/Users/ginge/Dropbox/KBA_ES/Global_KBA_10km.tif'
+
+    # TODO subtract biomass loss to get to current biomass
+    # TODO convert biomass to carbon
+
+    # aligned rasters go in the temp_dir, but intermediate files go in
+    # persistent directory in case there is an interruption
+    intermediate_save_dir = "F:/carbon_intermediate_files"
+    if not os.path.exists(intermediate_save_dir):
+        os.makedirs(intermediate_save_dir)
+    temp_dir = tempfile.mkdtemp()
+    tile_list = [
+        os.path.join(alwb_dir, f) for f in
+        os.listdir(alwb_dir) if f.endswith('.tif')]
+
+    # native resolution
+    # for tile_path in tile_list:
+    kba_raster_path = os.path.join(temp_dir, 'kba.tif')
+    # TESTING VALUES #
+    tile_path = "F:/GFW_ALWBD_2000/00N_000E_t_aboveground_biomass_ha_2000.tif"
+    kba_raster_path = "F:/carbon_intermediate_files/kba.tif"
+
+    # pygeoprocessing.new_raster_from_base(
+    #     tile_path, kba_raster_path, gdal.GDT_Int16, [_TARGET_NODATA],
+    #     fill_value_list=[0])
+    # # create aligned KBA raster
+    pygeoprocessing.rasterize(kba_shp, kba_raster_path, burn_values=[1])
+    # calculate zonal stats for tile
+    tile_dict = global_kba_summary(tile_path, kba_raster_path)
+    tile_df = pandas.DataFrame(data=tile_dict)
+    csv_path = os.path.join(
+        intermediate_save_dir, os.path.basename(tile_path))
+    tile_df.to_csv(csv_path, index=False)
+    # TODO combine tiled data frames into one
+
+    # 10 km resolution
+
+
+
+
 if __name__ == '__main__':
     # outer_workspace_dir = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/pollination_summary_11.30.18"
     # pollination_workflow(workspace_dir)
     # area_of_kbas(outer_workspace_dir)
-    outer_workspace_dir = r"C:\Users\ginge\Dropbox\KBA_ES\CV_summary_11.30.18"
+    # outer_workspace_dir = r"C:\Users\ginge\Dropbox\KBA_ES\CV_summary_11.30.18"
     # coastal_vulnerability_workflow(outer_workspace_dir)
-    cv_habitat_in_kbas(outer_workspace_dir)
+    # cv_habitat_in_kbas(outer_workspace_dir)
+    carbon_workflow()
