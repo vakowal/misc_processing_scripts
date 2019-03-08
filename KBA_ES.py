@@ -417,6 +417,89 @@ def carbon_kba_summary(
     return summary_dict
 
 
+def carbon_kba_summary_no_loss(
+        biomass_tile_path, kba_raster_path):
+    """Calculate sum of global carbon, and global carbon in KBAs.
+
+    Calculate the sum of biomass globally and the sum inside KBAs.
+
+    - KBAs are identified as having value == 1
+    - valid carbon is aboveground biomass > 0
+
+    Returns:
+        dictionary with sum of service inside tile and sum of service inside
+            KBAs inside tile
+    """
+    # check that all inputs are all the same dimensions
+    raster_info_list = [
+        pygeoprocessing.get_raster_info(path_band)
+        for path_band in [biomass_tile_path, kba_raster_path]]
+    geospatial_info_set = set()
+    for raster_info in raster_info_list:
+        geospatial_info_set.add(raster_info['raster_size'])
+    if len(geospatial_info_set) > 1:
+        raise ValueError(
+            "Input Rasters are not the same dimensions. The "
+            "following raster are not identical %s" % str(
+                geospatial_info_set))
+
+    service_raster = gdal.OpenEx(biomass_tile_path)
+    service_band = service_raster.GetRasterBand(1)
+
+    kba_raster = gdal.OpenEx(kba_raster_path)
+    kba_band = kba_raster.GetRasterBand(1)
+
+    try:
+        summary_dict = {
+            'global_service_sum': 0,
+            'global_service_sum_in_KBA': 0,
+        }
+        last_blocksize = None
+        for block_offset in pygeoprocessing.iterblocks(
+                (biomass_tile_path, 1), offset_only=True):
+            blocksize = (block_offset['win_ysize'], block_offset['win_xsize'])
+
+            if last_blocksize != blocksize:
+                service_array = numpy.zeros(
+                    blocksize,
+                    dtype=pygeoprocessing._gdal_to_numpy_type(service_band))
+                kba_array = numpy.zeros(
+                    blocksize,
+                    dtype=pygeoprocessing._gdal_to_numpy_type(kba_band))
+                last_blocksize = blocksize
+
+            service_data = block_offset.copy()
+            service_data['buf_obj'] = service_array
+            service_band.ReadAsArray(**service_data)
+
+            kba_data = block_offset.copy()
+            kba_data['buf_obj'] = kba_array
+            kba_band.ReadAsArray(**kba_data)
+
+            valid_mask = (service_array > 0)
+            service_divided = service_array / 10000.
+            summary_dict['global_service_sum'] += (
+                numpy.sum(service_divided[valid_mask]))
+
+            kba_mask = (
+                valid_mask &
+                (kba_array == 1))
+            summary_dict['global_service_sum_in_KBA'] += (
+                numpy.sum(service_divided[kba_mask]))
+
+        summary_dict['global_service_percent_in_KBA'] = (
+            float(summary_dict['global_service_sum_in_KBA']) /
+            summary_dict['global_service_sum'] * 100)
+
+    finally:
+        service_band = None
+        kba_band = None
+        gdal.Dataset.__swig_destroy__(service_raster)
+        gdal.Dataset.__swig_destroy__(kba_raster)
+
+    return summary_dict
+
+
 def global_kba_summary(service_raster_path, kba_raster_path):
     """Calculate global service sum and sum of service in KBAs.
 
@@ -1182,17 +1265,16 @@ def carbon_workflow():
         None
     """
     # directory containing tiles: aboveground live woody biomass in 2000
-    alwb_dir = "F:/GFW_ALWBD_2000"
+    alwb_dir = "C:/Users/ginge/Desktop/biomass_working_dir/GFW_ALWBD_2000"
     hansen_loss_dir = "F:/Hansen_lossyear"
     hansen_base_name = 'Hansen_GFC-2017-v1.5_lossyear_<loc_string>.tif'
     kba_shp = "C:/Users/ginge/Dropbox/KBA_ES/Mark_Mulligan_data/Global_KBA_poly/Global_KBA_poly.shp"
-    template_10km_raster = 'C:/Users/ginge/Dropbox/KBA_ES/Global_KBA_10km.tif'
 
     # aligned rasters go in the temp_dir, but intermediate files go in
     # persistent directory in case there is an interruption
     intermediate_save_dir = "F:/carbon_intermediate_files"
-    if not os.path.exists(intermediate_save_dir):
-        os.makedirs(intermediate_save_dir)
+    # if not os.path.exists(intermediate_save_dir):
+        # os.makedirs(intermediate_save_dir)
     temp_dir = tempfile.mkdtemp()
     tile_list = [
         os.path.join(alwb_dir, f) for f in
@@ -1204,41 +1286,89 @@ def carbon_workflow():
         'biomass_tile': [],
     }
     # native resolution
-    current_object = 1
-    for biomass_tile_path in tile_list[0:10]:
-        print "processing tile {} of 280".format(current_object)
-        loc_string = os.path.basename(biomass_tile_path)[:8]
-        loss_path = os.path.join(
-            hansen_loss_dir,
-            hansen_base_name.replace('<loc_string>', loc_string))
-        kba_raster_path = os.path.join(temp_dir, 'kba.tif')
-        pygeoprocessing.new_raster_from_base(
-            biomass_tile_path, kba_raster_path, gdal.GDT_Int16,
-            [_TARGET_NODATA], fill_value_list=[0])
-        # create aligned KBA raster
-        print "rasterizing aligned KBA raster"
-        pygeoprocessing.rasterize(kba_shp, kba_raster_path, burn_values=[1])
-        # calculate zonal stats for tile
-        print "calculating zonal stats for tile"
-        tile_dict = carbon_kba_summary(
-            biomass_tile_path, loss_path, kba_raster_path)
-        summary_dict['global_service_sum'].append(
-            summary_dict['global_service_sum'])
-        summary_dict['global_service_sum_in_KBA'].append(
-            summary_dict['global_service_sum_in_KBA'])
-        summary_dict['biomass_tile'].append(
-            os.path.basename(biomass_tile_path))
-        current_object += 1
-        if current_object % 10 == 0:
-            summary_df = pandas.DataFrame(data=summary_dict)
-            csv_path = os.path.join(
-                intermediate_save_dir, 'summary_dict_{}.csv'.format(
-                    current_object))
-            summary_df.to_csv(csv_path, index=False)
+    # current_object = 1
+    # for biomass_tile_path in tile_list[0:10]:
+    #     print "processing tile {} of 280".format(current_object)
+    #     loc_string = os.path.basename(biomass_tile_path)[:8]
+    #     loss_path = os.path.join(
+    #         hansen_loss_dir,
+    #         hansen_base_name.replace('<loc_string>', loc_string))
+    #     kba_raster_path = os.path.join(temp_dir, 'kba.tif')
+    #     pygeoprocessing.new_raster_from_base(
+    #         biomass_tile_path, kba_raster_path, gdal.GDT_Int16,
+    #         [_TARGET_NODATA], fill_value_list=[0])
+    #     # create aligned KBA raster
+    #     print "rasterizing aligned KBA raster"
+    #     pygeoprocessing.rasterize(kba_shp, kba_raster_path, burn_values=[1])
+    #     # calculate zonal stats for tile
+    #     print "calculating zonal stats for tile"
+    #     tile_dict = carbon_kba_summary(
+    #         biomass_tile_path, loss_path, kba_raster_path)
+    #     summary_dict['global_service_sum'].append(
+    #         tile_dict['global_service_sum'])
+    #     summary_dict['global_service_sum_in_KBA'].append(
+    #         tile_dict['global_service_sum_in_KBA'])
+    #     summary_dict['biomass_tile'].append(
+    #         os.path.basename(biomass_tile_path))
+    #     current_object += 1
+    #     if current_object % 10 == 0:
+    #         summary_df = pandas.DataFrame(data=summary_dict)
+    #         csv_path = os.path.join(
+    #             intermediate_save_dir, 'summary_dict_{}.csv'.format(
+    #                 current_object))
+    #         summary_df.to_csv(csv_path, index=False)
 
     # 10 km resolution
+    summary_dict = {
+        'global_service_sum': [],
+        'global_service_sum_in_KBA': [],
+        'biomass_tile': [],
+    }
+    kba_10km_path = 'C:/Users/ginge/Desktop/biomass_working_dir/Global_KBA_10km.tif'
+    target_pixel_size = pygeoprocessing.get_raster_info(
+        kba_10km_path)['pixel_size']
+    # biomass masked and aggregated to ~10 km in R
+    biomass_resampled_dir = "C:/Users/ginge/Desktop/biomass_working_dir/GFW_ALWBD_2015_10km_resample"
+    aligned_dir = os.path.join(temp_dir, 'aligned')
+    # FOR TESTING
+    aligned_dir = "C:/Users/ginge/Desktop/biomass_working_dir/aligned"
+    intermediate_save_dir = "C:/Users/ginge/Desktop/biomass_working_dir/intermediate_save_dir"
 
+    tile_basename_list = [
+        f for f in os.listdir(alwb_dir) if f.endswith('.tif')]
+    current_object = 1
+    for biomass_tile_bn in tile_basename_list:
+        native_path = os.path.join(alwb_dir, biomass_tile_bn)
+        resampled_path = os.path.join(biomass_resampled_dir, biomass_tile_bn)
+        input_path_list = [native_path, resampled_path, kba_10km_path]
 
+        aligned_native_path = os.path.join(aligned_dir, 'native_biomass.tif')
+        aligned_resampled_path = os.path.join(aligned_dir, biomass_tile_bn)
+        aligned_kba_path = os.path.join(aligned_dir, 'kba.tif')
+        target_raster_path_list = [
+            aligned_native_path, aligned_resampled_path, aligned_kba_path]
+
+        align_bounding_box = pygeoprocessing.get_raster_info(
+            native_path)['bounding_box']
+        pygeoprocessing.align_and_resize_raster_stack(
+            input_path_list, target_raster_path_list,
+            ['near'] * len(input_path_list), target_pixel_size,
+            bounding_box_mode=align_bounding_box)
+
+        tile_dict = carbon_kba_summary_no_loss(
+            aligned_resampled_path, aligned_kba_path)
+        summary_dict['global_service_sum'].append(
+            tile_dict['global_service_sum'])
+        summary_dict['global_service_sum_in_KBA'].append(
+            tile_dict['global_service_sum_in_KBA'])
+        summary_dict['biomass_tile'].append(biomass_tile_bn)
+        current_object += 1
+        # if current_object % 10 == 0:
+        summary_df = pandas.DataFrame(data=summary_dict)
+        csv_path = os.path.join(
+            intermediate_save_dir, 'summary_dict_{}.csv'.format(
+                current_object))
+        summary_df.to_csv(csv_path, index=False)
 
 
 if __name__ == '__main__':

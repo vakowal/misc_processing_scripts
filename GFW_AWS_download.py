@@ -21,8 +21,12 @@ import pandas
 
 
 # local disk location to store downloaded data
-alwbd_dir = 'F:/GFW_ALWBD_2000'
-loss_dir = 'F:/Hansen_lossyear'
+alwbd_dir = 'C:/Users/ginge/Desktop/GFW_ALWBD_2000'
+if not os.path.exists(alwbd_dir):
+    os.makedirs(alwbd_dir)
+loss_dir = 'C:/Users/ginge/Desktop/Hansen_lossyear'
+if not os.path.exists(loss_dir):
+    os.makedirs(loss_dir)
 
 
 def download_aboveground_biomass_data():
@@ -37,7 +41,7 @@ def download_aboveground_biomass_data():
         Bucket=GFW_bucket_name, Prefix=ALWBD_prefix)
     num_objects = len(aws_objects['Contents'])
     current_object = 1
-    for obj in aws_objects['Contents']:
+    for obj in aws_objects['Contents'][0:20]:
         key = obj['Key']
         tile_name = os.path.basename(key)
         target_path = os.path.join(alwbd_dir, tile_name)
@@ -57,7 +61,7 @@ def get_forest_loss_data():
     """
     alwbd_files = [f for f in os.listdir(alwbd_dir) if f.endswith('.tif')]
     hansen_url_list = pandas.read_csv(
-        'F:/lossyear.csv', header=None, names=['url'])
+        'C:/Users/ginge/Desktop/lossyear.csv', header=None, names=['url'])
     hansen_base_url = 'https://storage.googleapis.com/earthenginepartners-hansen/GFC-2017-v1.5/Hansen_GFC-2017-v1.5_lossyear_<loc_string>.tif'
     current_object = 1
     downloaded = 0
@@ -81,4 +85,5 @@ def get_forest_loss_data():
 
 
 if __name__ == '__main__':
+    download_aboveground_biomass_data()
     get_forest_loss_data()
