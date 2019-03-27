@@ -9,6 +9,8 @@ import tempfile
 from osgeo import gdal
 import numpy
 import pandas
+from datetime import datetime
+import urllib2
 # import arcpy
 
 import pygeoprocessing
@@ -358,6 +360,8 @@ def carbon_kba_summary(
         summary_dict = {
             'global_service_sum': 0,
             'global_service_sum_in_KBA': 0,
+            'n_pixels': 0,
+            'n_KBA_pixels': 0,
         }
         last_blocksize = None
         for block_offset in pygeoprocessing.iterblocks(
@@ -395,12 +399,15 @@ def carbon_kba_summary(
             service_divided = service_array / 10000.
             summary_dict['global_service_sum'] += (
                 numpy.sum(service_divided[valid_mask]))
+            summary_dict['n_pixels'] += len(service_divided[valid_mask])
 
             kba_mask = (
                 valid_mask &
                 (kba_array == 1))
             summary_dict['global_service_sum_in_KBA'] += (
                 numpy.sum(service_divided[kba_mask]))
+            summary_dict['n_KBA_pixels'] += (
+                len(service_divided[kba_mask]))
 
         summary_dict['global_service_percent_in_KBA'] = (
             float(summary_dict['global_service_sum_in_KBA']) /
@@ -423,7 +430,7 @@ def carbon_kba_summary_no_loss(
 
     Calculate the sum of biomass globally and the sum inside KBAs.
 
-    - KBAs are identified as having value == 1
+    - KBAs are identified as having value > 0
     - valid carbon is aboveground biomass > 0
 
     Returns:
@@ -453,6 +460,8 @@ def carbon_kba_summary_no_loss(
         summary_dict = {
             'global_service_sum': 0,
             'global_service_sum_in_KBA': 0,
+            'n_pixels': 0,
+            'n_KBA_pixels': 0,
         }
         last_blocksize = None
         for block_offset in pygeoprocessing.iterblocks(
@@ -480,12 +489,15 @@ def carbon_kba_summary_no_loss(
             service_divided = service_array / 10000.
             summary_dict['global_service_sum'] += (
                 numpy.sum(service_divided[valid_mask]))
+            summary_dict['n_pixels'] += len(service_divided[valid_mask])
 
             kba_mask = (
                 valid_mask &
-                (kba_array == 1))
+                (kba_array > 0))
             summary_dict['global_service_sum_in_KBA'] += (
                 numpy.sum(service_divided[kba_mask]))
+            summary_dict['n_KBA_pixels'] += (
+                len(service_divided[kba_mask]))
 
         summary_dict['global_service_percent_in_KBA'] = (
             float(summary_dict['global_service_sum_in_KBA']) /
@@ -651,22 +663,22 @@ def cv_habitat_attribution_workflow(workspace_dir):
         'mangrove': {
             'risk': 1,
             'effect_distance': 1000,
-            'habitat_shp': r"C:\Users\ginge\Documents\NatCap\GIS_local\KBA_ES\IPBES_data_layers\coastal_vulnerability\habitat\DataPack-14_001_WCMC010_MangrovesUSGS2011_v1_3\01_Data\14_001_WCMC010_MangroveUSGS2011_v1_3.shp",
+            'habitat_shp': r"C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/coastal_vulnerability/habitat/DataPack-14_001_WCMC010_MangrovesUSGS2011_v1_3/01_Data/14_001_WCMC010_MangroveUSGS2011_v1_3.shp",
         },
         'saltmarsh': {
             'risk': 2,
             'effect_distance': 1000,
-            'habitat_shp': r"C:\Users\ginge\Documents\NatCap\GIS_local\KBA_ES\IPBES_data_layers\coastal_vulnerability\habitat\datapack-14_001_wcmc027_saltmarsh2017_v4\01_Data\14_001_WCMC027_Saltmarsh_py_v4.shp",
+            'habitat_shp': r"C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/coastal_vulnerability/habitat/datapack-14_001_wcmc027_saltmarsh2017_v4/01_Data/14_001_WCMC027_Saltmarsh_py_v4.shp",
         },
         'coralreef': {
             'risk': 1,
             'effect_distance': 2000,
-            'habitat_shp': r"C:\Users\ginge\Documents\NatCap\GIS_local\KBA_ES\IPBES_data_layers\coastal_vulnerability\habitat\DataPack-14_001_WCMC008_CoralReef2010_v1_3\01_Data\14_001_WCMC008_CoralReef2010_v1_3.shp",
+            'habitat_shp': r"C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/coastal_vulnerability/habitat/DataPack-14_001_WCMC008_CoralReef2010_v1_3/01_Data/14_001_WCMC008_CoralReef2010_v1_3.shp",
         },
         'seagrass': {
             'risk': 4,
             'effect_distance': 500,
-            'habitat_shp': r"C:\Users\ginge\Documents\NatCap\GIS_local\KBA_ES\IPBES_data_layers\coastal_vulnerability\habitat\datapack-14_001_wcmc013_014_seagrassptpy_v4\01_Data\WCMC_013_014_SeagrassesPy_v4.shp",
+            'habitat_shp': r"C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/IPBES_data_layers/coastal_vulnerability/habitat/datapack-14_001_wcmc013_014_seagrassptpy_v4/01_Data/WCMC_013_014_SeagrassesPy_v4.shp",
         },
     }
     # moving window analysis: mean of service values within effect distance
@@ -1108,8 +1120,8 @@ def cv_habitat_in_kbas(outer_workspace_dir):
         'habitat_in_KBA_pixels': [],
         'KBA_percent_of_habitat_pixels': [],
     }
-    habitat_raster_path = r"C:\Users\ginge\Dropbox\KBA_ES\CV_summary_11.30.18\habitat_attribution_rasters\habitat_mosaic_10km.tif"
-    kba_raster_path = r"C:\Users\ginge\Dropbox\KBA_ES\CV_summary_11.30.18\10km\aligned_inputs\Global_KBA_10km.tif"
+    habitat_raster_path = r"C:/Users/ginge/Dropbox/KBA_ES/CV_summary_11.30.18/habitat_attribution_rasters/habitat_mosaic_10km.tif"
+    kba_raster_path = r"C:/Users/ginge/Dropbox/KBA_ES/CV_summary_11.30.18/10km/aligned_inputs/Global_KBA_10km.tif"
 
     habitat_raster = gdal.OpenEx(habitat_raster_path)
     habitat_band = habitat_raster.GetRasterBand(1)
@@ -1265,16 +1277,16 @@ def carbon_workflow():
         None
     """
     # directory containing tiles: aboveground live woody biomass in 2000
-    alwb_dir = "C:/Users/ginge/Desktop/biomass_working_dir/GFW_ALWBD_2000"
+    alwb_dir = "F:/GFW_ALWBD_2000"
     hansen_loss_dir = "F:/Hansen_lossyear"
     hansen_base_name = 'Hansen_GFC-2017-v1.5_lossyear_<loc_string>.tif'
-    kba_shp = "C:/Users/ginge/Dropbox/KBA_ES/Mark_Mulligan_data/Global_KBA_poly/Global_KBA_poly.shp"
+    kba_shp = "F:/Global_KBA_poly.shp"
 
     # aligned rasters go in the temp_dir, but intermediate files go in
     # persistent directory in case there is an interruption
     intermediate_save_dir = "F:/carbon_intermediate_files"
-    # if not os.path.exists(intermediate_save_dir):
-        # os.makedirs(intermediate_save_dir)
+    if not os.path.exists(intermediate_save_dir):
+        os.makedirs(intermediate_save_dir)
     temp_dir = tempfile.mkdtemp()
     tile_list = [
         os.path.join(alwb_dir, f) for f in
@@ -1283,61 +1295,83 @@ def carbon_workflow():
     summary_dict = {
         'global_service_sum': [],
         'global_service_sum_in_KBA': [],
+        'resolution': [],
+        'n_pixels': [],
+        'n_KBA_pixels': [],
         'biomass_tile': [],
     }
     # native resolution
-    # current_object = 1
-    # for biomass_tile_path in tile_list[0:10]:
-    #     print "processing tile {} of 280".format(current_object)
-    #     loc_string = os.path.basename(biomass_tile_path)[:8]
-    #     loss_path = os.path.join(
-    #         hansen_loss_dir,
-    #         hansen_base_name.replace('<loc_string>', loc_string))
-    #     kba_raster_path = os.path.join(temp_dir, 'kba.tif')
-    #     pygeoprocessing.new_raster_from_base(
-    #         biomass_tile_path, kba_raster_path, gdal.GDT_Int16,
-    #         [_TARGET_NODATA], fill_value_list=[0])
-    #     # create aligned KBA raster
-    #     print "rasterizing aligned KBA raster"
-    #     pygeoprocessing.rasterize(kba_shp, kba_raster_path, burn_values=[1])
-    #     # calculate zonal stats for tile
-    #     print "calculating zonal stats for tile"
-    #     tile_dict = carbon_kba_summary(
-    #         biomass_tile_path, loss_path, kba_raster_path)
-    #     summary_dict['global_service_sum'].append(
-    #         tile_dict['global_service_sum'])
-    #     summary_dict['global_service_sum_in_KBA'].append(
-    #         tile_dict['global_service_sum_in_KBA'])
-    #     summary_dict['biomass_tile'].append(
-    #         os.path.basename(biomass_tile_path))
-    #     current_object += 1
-    #     if current_object % 10 == 0:
-    #         summary_df = pandas.DataFrame(data=summary_dict)
-    #         csv_path = os.path.join(
-    #             intermediate_save_dir, 'summary_dict_{}.csv'.format(
-    #                 current_object))
-    #         summary_df.to_csv(csv_path, index=False)
+    combine_summary_results()
+    done_df_csv = [
+        f for f in os.listdir(intermediate_save_dir) if
+        f.startswith('biomass_KBA_summary')]
+    done_df = pandas.read_csv(
+        os.path.join(intermediate_save_dir, done_df_csv[0]))
+    done_df = done_df[done_df.n_pixels.notnull()]
+    done_tiles = done_df[
+        done_df['resolution'] == '30m']['biomass_tile'].values
+    current_object = 1
+    for biomass_tile_path in tile_list:
+        print "processing tile {} of 280".format(current_object)
+        if os.path.basename(biomass_tile_path) in done_tiles:
+            current_object += 1
+            continue
+        loc_string = os.path.basename(biomass_tile_path)[:8]
+        loss_path = os.path.join(
+            hansen_loss_dir,
+            hansen_base_name.replace('<loc_string>', loc_string))
+        kba_raster_path = os.path.join(temp_dir, 'kba.tif')
+        pygeoprocessing.new_raster_from_base(
+            biomass_tile_path, kba_raster_path, gdal.GDT_Int16,
+            [_TARGET_NODATA], fill_value_list=[0])
+        # create aligned KBA raster
+        print "rasterizing aligned KBA raster"
+        pygeoprocessing.rasterize(kba_shp, kba_raster_path, burn_values=[1])
+        # calculate zonal stats for tile
+        print "calculating zonal stats for tile"
+        tile_dict = carbon_kba_summary(
+            biomass_tile_path, loss_path, kba_raster_path)
+        summary_dict['global_service_sum'].append(
+            tile_dict['global_service_sum'])
+        summary_dict['global_service_sum_in_KBA'].append(
+            tile_dict['global_service_sum_in_KBA'])
+        summary_dict['n_pixels'].append(tile_dict['n_pixels'])
+        summary_dict['n_KBA_pixels'].append(tile_dict['n_KBA_pixels'])
+        summary_dict['resolution'].append('30m')
+        summary_dict['biomass_tile'].append(
+            os.path.basename(biomass_tile_path))
+        current_object += 1
+        summary_df = pandas.DataFrame(data=summary_dict)
+        csv_path = os.path.join(
+            intermediate_save_dir, 'summary_dict_{}.csv'.format(
+                current_object))
+        summary_df.to_csv(csv_path, index=False)
 
     # 10 km resolution
     summary_dict = {
         'global_service_sum': [],
         'global_service_sum_in_KBA': [],
+        'resolution': [],
+        'n_pixels': [],
+        'n_KBA_pixels': [],
         'biomass_tile': [],
     }
-    kba_10km_path = 'C:/Users/ginge/Desktop/biomass_working_dir/Global_KBA_10km.tif'
+    kba_10km_path = "C:/Users/ginge/Dropbox/KBA_ES/Global_KBA_10km.tif"
     target_pixel_size = pygeoprocessing.get_raster_info(
         kba_10km_path)['pixel_size']
     # biomass masked and aggregated to ~10 km in R
     biomass_resampled_dir = "C:/Users/ginge/Desktop/biomass_working_dir/GFW_ALWBD_2015_10km_resample"
     aligned_dir = os.path.join(temp_dir, 'aligned')
-    # FOR TESTING
-    aligned_dir = "C:/Users/ginge/Desktop/biomass_working_dir/aligned"
-    intermediate_save_dir = "C:/Users/ginge/Desktop/biomass_working_dir/intermediate_save_dir"
+    os.makedirs(aligned_dir)
 
     tile_basename_list = [
-        f for f in os.listdir(alwb_dir) if f.endswith('.tif')]
+        f for f in os.listdir(biomass_resampled_dir) if f.endswith('.tif')]
     current_object = 1
+    done_tiles = done_df[
+        done_df['resolution'] == '10km']['biomass_tile'].values
     for biomass_tile_bn in tile_basename_list:
+        if biomass_tile_bn in done_tiles:
+            continue
         native_path = os.path.join(alwb_dir, biomass_tile_bn)
         resampled_path = os.path.join(biomass_resampled_dir, biomass_tile_bn)
         input_path_list = [native_path, resampled_path, kba_10km_path]
@@ -1348,6 +1382,8 @@ def carbon_workflow():
         target_raster_path_list = [
             aligned_native_path, aligned_resampled_path, aligned_kba_path]
 
+        print "processing 10km tile {} of {}".format(
+            current_object, len(tile_basename_list))
         align_bounding_box = pygeoprocessing.get_raster_info(
             native_path)['bounding_box']
         pygeoprocessing.align_and_resize_raster_stack(
@@ -1361,6 +1397,9 @@ def carbon_workflow():
             tile_dict['global_service_sum'])
         summary_dict['global_service_sum_in_KBA'].append(
             tile_dict['global_service_sum_in_KBA'])
+        summary_dict['n_pixels'].append(tile_dict['n_pixels'])
+        summary_dict['n_KBA_pixels'].append(tile_dict['n_KBA_pixels'])
+        summary_dict['resolution'].append('10km')
         summary_dict['biomass_tile'].append(biomass_tile_bn)
         current_object += 1
         # if current_object % 10 == 0:
@@ -1370,12 +1409,59 @@ def carbon_workflow():
                 current_object))
         summary_df.to_csv(csv_path, index=False)
 
+    combine_summary_results()
+
+
+def combine_summary_results():
+    outer_outdir = "F:/carbon_intermediate_files"
+    existing_csv = [
+        os.path.join(outer_outdir, f) for f in os.listdir(outer_outdir) if
+        f.startswith('summary_dict_') or f.startswith('biomass_KBA_summary_')]
+    existing_df = [pandas.read_csv(csv) for csv in existing_csv]
+    for df in existing_df:
+        if 'n_pixels' not in df.columns.values:
+            df['n_pixels'] = 'NA'
+        if 'n_KBA_pixels' not in df.columns.values:
+            df['n_KBA_pixels'] = 'NA'
+    if len(existing_df) > 1:
+        done_df = pandas.concat(existing_df)
+        done_df.drop_duplicates(inplace=True)
+        now_str = datetime.now().strftime("%Y-%m-%d--%H_%M_%S")
+        save_as = os.path.join(
+            outer_outdir,
+            'biomass_KBA_summary_{}.csv'.format(now_str))
+        done_df.to_csv(save_as, index=False)
+        for item in existing_csv:
+            os.remove(item)
+
+
+def download_data():
+    """Download the latest IPBES results."""
+    download_table = r"C:\Users\ginge\Dropbox\NatCap_backup\KBA+ES\ipbes_download_table_3.24.19.csv"
+    save_dir = r"F:\IPBES_data_layers_3.24.19"
+
+    dl_df = pandas.read_csv(download_table).set_index('DATASET DESCRIPTION')
+    for row_i in xrange(dl_df.shape[0]):
+        url = dl_df.ix[row_i]['DOWNLOAD LINK']
+        local_destination = os.path.join(
+            save_dir, os.path.basename(url))
+        if not os.path.exists(local_destination):
+            print "downloading {}".format(os.path.basename(url))
+            data = urllib2.urlopen(url)
+            with open(local_destination,'w') as f:
+                while True:
+                    tmp = data.read(1024)
+                    if not tmp:
+                        break
+                    f.write(tmp)
+
 
 if __name__ == '__main__':
     # outer_workspace_dir = "C:/Users/ginge/Documents/NatCap/GIS_local/KBA_ES/pollination_summary_11.30.18"
     # pollination_workflow(workspace_dir)
     # area_of_kbas(outer_workspace_dir)
-    # outer_workspace_dir = r"C:\Users\ginge\Dropbox\KBA_ES\CV_summary_11.30.18"
+    # outer_workspace_dir = r"C:/Users/ginge/Dropbox/KBA_ES/CV_summary_11.30.18"
     # coastal_vulnerability_workflow(outer_workspace_dir)
     # cv_habitat_in_kbas(outer_workspace_dir)
-    carbon_workflow()
+    # carbon_workflow()
+    # download_data()

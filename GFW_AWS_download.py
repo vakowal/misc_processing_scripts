@@ -1,9 +1,11 @@
 """Download Global Forest Watch data using Amazon Web Services.
 
 Use this script to download the Global Forest Watch Aboveground Live
-Woody Biomass Density dataset to disk.
-Dataset described here:
-http://data.globalforestwatch.org/datasets/8f93a6f94a414f9588ce4657a39c59ff_1
+Woody Biomass Density dataset (
+http://data.globalforestwatch.org/datasets/8f93a6f94a414f9588ce4657a39c59ff_1)
+and Hansen forest loss dataset (
+)
+for coincito disk.
 Ginger Kowal, March 2019, gkowal@stanford.edu
 
 Prerequisites:
@@ -20,10 +22,12 @@ import urllib2
 import pandas
 
 
-# local disk location to store downloaded data
+# local disk location to store downloaded biomass rasters
 alwbd_dir = 'C:/Users/ginge/Desktop/GFW_ALWBD_2000'
 if not os.path.exists(alwbd_dir):
     os.makedirs(alwbd_dir)
+
+# local disk location to store forest loss rasters
 loss_dir = 'C:/Users/ginge/Desktop/Hansen_lossyear'
 if not os.path.exists(loss_dir):
     os.makedirs(loss_dir)
@@ -53,15 +57,18 @@ def download_aboveground_biomass_data():
         current_object += 1
 
 
-def get_forest_loss_data():
+def get_forest_loss_data(hansen_url_csv_path):
     """Get forest loss data from Hansen dataset.
+
+    Forest loss data available here:
+    https://earthenginepartners.appspot.com/science-2013-global-forest/download_v1.5.html
 
     Retrieve only the granules that coincide with ALWBD data
     according to the file name.
     """
     alwbd_files = [f for f in os.listdir(alwbd_dir) if f.endswith('.tif')]
     hansen_url_list = pandas.read_csv(
-        'C:/Users/ginge/Desktop/lossyear.csv', header=None, names=['url'])
+        hansen_url_csv_path, header=None, names=['url'])
     hansen_base_url = 'https://storage.googleapis.com/earthenginepartners-hansen/GFC-2017-v1.5/Hansen_GFC-2017-v1.5_lossyear_<loc_string>.tif'
     current_object = 1
     downloaded = 0
@@ -85,5 +92,10 @@ def get_forest_loss_data():
 
 
 if __name__ == '__main__':
+    # I made this csv on my local machine, containing  the url paths of each
+    # tile in the Hansen biomass loss dataset, from a txt file available at:
+    # https://storage.googleapis.com/earthenginepartners-hansen/GFC-2017-v1.5/lossyear.txt
+    hansen_url_csv_path = 'C:/Users/ginge/Desktop/lossyear.csv'
+
     download_aboveground_biomass_data()
-    get_forest_loss_data()
+    get_forest_loss_data(hansen_url_csv_path)
