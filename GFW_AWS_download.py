@@ -4,8 +4,8 @@ Use this script to download the Global Forest Watch Aboveground Live
 Woody Biomass Density dataset (
 http://data.globalforestwatch.org/datasets/8f93a6f94a414f9588ce4657a39c59ff_1)
 and Hansen forest loss dataset (
-)
-for coincito disk.
+https://earthenginepartners.appspot.com/science-2013-global-forest/download_v1.5.html)
+for coincidental areas to disk.
 Ginger Kowal, March 2019, gkowal@stanford.edu
 
 Prerequisites:
