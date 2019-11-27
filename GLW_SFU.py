@@ -214,20 +214,62 @@ def main(result_dir):
     return temp_dir
 
 
-def test():
-    """Argh."""
-    test_ras = "E:/GIS_local_archive/General_useful_data/GLW3_Livestock_of_the_World/cattle/5_Ct_2010_Da.tif"
-    target_path = "E:/GIS_local_archive/General_useful_data/GLW3_Livestock_of_the_World/test_rc.tif"
-    src_nodata = pygeoprocessing.get_raster_info(test_ras)['nodata'][0]
-    value_map = {src_nodata: -1.0}
-    pygeoprocessing.reclassify_raster(
-        (test_ras, 1), value_map, target_path, gdal.GDT_Float32,)
+def raster_list_mean(raster_list, input_nodata, target_path, target_nodata):
+    """Calculate the mean value across rasters in a list.
+
+    Sum the rasters in `raster_list` element-wise, treating nodata as zero, and
+    divide the sum by the number of rasters in raster list.  Areas where all
+    input rasters are nodata will be nodata in the output.
+
+    Parameters:
+        raster_list (list): list of paths to rasters to calculate mean from
+        input_nodata (float or int): nodata value in the input rasters
+        target_path (string): path to location to store the result
+        target_nodata (float or int): nodata value for the result raster
+
+    Side effects:
+        modifies or creates the raster indicated by `target_path`
+
+    Returns:
+        None
+
+    """
+    def raster_mean_op_nodata_remove(*raster_list):
+        """Calculate mean of values in list, treating nodata as zero."""
+        invalid_mask = numpy.all(
+            numpy.isclose(numpy.array(raster_list), input_nodata), axis=0)
+        for r in raster_list:
+            numpy.place(r, numpy.isclose(r, input_nodata), [0])
+        sum_of_rasters = numpy.sum(raster_list, axis=0)
+        mean = sum_of_rasters / float(len(raster_list))
+        mean[invalid_mask] = target_nodata
+        return mean
+
+    pygeoprocessing.raster_calculator(
+        [(path, 1) for path in raster_list], raster_mean_op_nodata_remove,
+        target_path, gdal.GDT_Float64, target_nodata)
+
+
+def calculate_mean_density_RPM():
+    """Calculate mean animal density across months of RPM simulation."""
+    rpm_outputs_dir = "E:/GIS_local/Mongolia/RPM_outputs_empirical_sd_7.30.19"
+    density_dir = os.path.join(rpm_outputs_dir, 'animal_density')
+    animal_density_path_list = [
+        os.path.join(density_dir, bn) for bn in os.listdir(density_dir)
+        if bn.endswith('.tif')]
+    input_nodata = pygeoprocessing.get_raster_info(
+        animal_density_path_list[0])['nodata'][0]
+    target_path = os.path.join(rpm_outputs_dir, 'mean_animal_density.tif')
+    raster_list_mean(
+        animal_density_path_list, input_nodata, target_path, input_nodata)
 
 
 if __name__ == '__main__':
-    result_dir = os.path.join(_DATA_DIR, 'SFU_equivalent')
-    temp_dir = main(result_dir)
-    import pdb; pdb.set_trace()
+    # result_dir = os.path.join(_DATA_DIR, 'SFU_equivalent')
+    # temp_dir = main(result_dir)
+    # import pdb; pdb.set_trace()
 
-    # clean up
-    shutil.rmtree(temp_dir)
+    # # clean up
+    # shutil.rmtree(temp_dir)
+
+    calculate_mean_density_RPM()
