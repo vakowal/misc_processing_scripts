@@ -11,7 +11,7 @@ from osgeo import gdal
 import numpy
 import pandas
 from datetime import datetime
-import urllib2
+# import urllib2
 # import arcpy
 
 import pygeoprocessing
@@ -825,7 +825,7 @@ def cv_habitat_attribution_workflow(workspace_dir):
             'habitat_shp': "F:/cv_workspace/seagrass_proj.shp",
         },
     }
-    # cv_results_shp = r"C:\Users\ginge\Documents\ArcGIS\Default.gdb\main_Project"
+    # cv_results_shp = r"C:/Users/ginge/Documents/ArcGIS/Default.gdb/main_Project"
     # moving window analysis: mean of service values within effect distance
     # of each pixel
     # did this in ArcMap with the file "kba_es_arcmap_snippets.py"
@@ -864,8 +864,8 @@ def cv_habitat_attribution_workflow(workspace_dir):
                 raster_field = "FID"
             arcpy.env.cellSize = point_stat_raster_path
             arcpy.env.snapRaster = point_stat_raster_path
-            print "polygon to raster ..."
-            print habitat_raster_path
+            print("polygon to raster ...")
+            print(habitat_raster_path)
             arcpy.PolygonToRaster_conversion(
                 habitat_dict[habitat_type]['habitat_shp'], raster_field,
                 habitat_raster_path, cell_assignment="MAXIMUM_AREA")
@@ -886,7 +886,7 @@ def cv_habitat_attribution_workflow(workspace_dir):
                     os.path.basename(r)[:-4],
                     scenario)) for r in rasters_to_align]
             if not all([os.path.exists(p) for p in aligned_rasters]):
-                print "aligning habitat and point statistics ..."
+                print("aligning habitat and point statistics ...")
                 bounding_box = pygeoprocessing.get_raster_info(
                     point_stat_raster_path)['bounding_box']
                 pygeoprocessing.align_and_resize_raster_stack(
@@ -913,8 +913,8 @@ def cv_habitat_attribution_workflow(workspace_dir):
                     value_raster)['nodata'][0]
                 mask_nodata = pygeoprocessing.get_raster_info(
                     mask_raster)['nodata'][0]
-                print "extracting point statistics by habitat mask:"
-                print point_stat_habitat_path
+                print("extracting point statistics by habitat mask:")
+                print(point_stat_habitat_path)
                 pygeoprocessing.raster_calculator(
                     [(path, 1) for path in [
                         value_raster, mask_raster]],
@@ -933,8 +933,8 @@ def cv_habitat_attribution_workflow(workspace_dir):
         output_raster = 'service_mosaic_{}.tif'.format(scenario)
         if not os.path.isfile(os.path.join(workspace_dir, output_raster)):
             # do it in Arc
-            print "Mosaic to new raster:"
-            print output_raster
+            print("Mosaic to new raster:")
+            print(output_raster)
             arcpy.MosaicToNewRaster_management(
                 input_rasters=input_rasters,
                 output_location=workspace_dir,
@@ -1487,7 +1487,7 @@ def carbon_workflow():
         done_df['resolution'] == '30m']['biomass_tile'].values
     current_object = 1
     for biomass_tile_path in tile_list:
-        print "processing tile {} of 280".format(current_object)
+        print("processing tile {} of 280".format(current_object))
         if os.path.basename(biomass_tile_path) in done_tiles:
             current_object += 1
             continue
@@ -1500,10 +1500,10 @@ def carbon_workflow():
             biomass_tile_path, kba_raster_path, gdal.GDT_Int16,
             [_TARGET_NODATA], fill_value_list=[0])
         # create aligned KBA raster
-        print "rasterizing aligned KBA raster"
+        print("rasterizing aligned KBA raster")
         pygeoprocessing.rasterize(kba_shp, kba_raster_path, burn_values=[1])
         # calculate zonal stats for tile
-        print "calculating zonal stats for tile"
+        print("calculating zonal stats for tile")
         tile_dict = carbon_kba_summary(
             biomass_tile_path, loss_path, kba_raster_path)
         summary_dict['global_service_sum'].append(
@@ -1557,8 +1557,8 @@ def carbon_workflow():
         target_raster_path_list = [
             aligned_native_path, aligned_resampled_path, aligned_kba_path]
 
-        print "processing 10km tile {} of {}".format(
-            current_object, len(tile_basename_list))
+        print("processing 10km tile {} of {}".format(
+            current_object, len(tile_basename_list)))
         align_bounding_box = pygeoprocessing.get_raster_info(
             native_path)['bounding_box']
         pygeoprocessing.align_and_resize_raster_stack(
@@ -1690,8 +1690,8 @@ def process_ndr_service_rasters(workspace_dir):
             load_raster_path)['nodata'][0]
         export_nodata = pygeoprocessing.get_raster_info(
             export_raster_path)['nodata'][0]
-        print "Calculating N retention: "
-        print retention_raster_path
+        print("Calculating N retention: ")
+        print(retention_raster_path)
         pygeoprocessing.raster_calculator(
             [(path, 1) for path in [
                 load_raster_path, export_raster_path]],
@@ -1709,7 +1709,7 @@ def process_ndr_service_rasters(workspace_dir):
     aligned_path_list = [
         os.path.join(aligned_raster_dir, os.path.basename(r)) for r in
         input_path_list]
-    print "Aligning retention rasters: "
+    print("Aligning retention rasters: ")
     pygeoprocessing.align_and_resize_raster_stack(
         input_path_list, aligned_path_list,
         ['near'] * len(aligned_path_list), kba_pixel_size,
@@ -1809,7 +1809,7 @@ def process_LPJ_GUESS_rasters(workspace_dir):
     if not os.path.exists(aligned_raster_dir):
         os.makedirs(aligned_raster_dir)
 
-    raw_tif_dir = r'F:\LPJ_Guess_carbon_scenarios\exported_geotiff'
+    raw_tif_dir = r'F:/LPJ_Guess_carbon_scenarios/exported_geotiff'
     LPJ_GUESS_basename_list = [
         'LPJ-GUESS_rcp2p6_IMAGE_cVeg_2015_1x1.tif',
         'LPJ-GUESS_rcp2p6_IMAGE_cVeg_2050_1x1.tif',
@@ -1845,7 +1845,7 @@ def process_LPJ_GUESS_rasters(workspace_dir):
     aligned_path_list = [
         os.path.join(aligned_raster_dir, os.path.basename(r)) for r in
         input_path_list]
-    print "Aligning LPJ-GUESS carbon rasters: "
+    print("Aligning LPJ-GUESS carbon rasters: ")
     pygeoprocessing.align_and_resize_raster_stack(
         input_path_list, aligned_path_list,
         ['near'] * len(aligned_path_list), kba_pixel_size,
@@ -1939,6 +1939,399 @@ def LPJ_carbon_workflow(workspace_dir):
             service_relative_to_area_by_country_raster)
 
 
+def raster_sum_under_land_area(value_raster_path, land_area_path):
+    """Calculate sum of values in a raster falling under a land area mask.
+
+    The two rasters must be aligned, with identical dimensions, pixel size,
+    and block size.
+
+    Parameters:
+        value_raster_path (string): path to raster whose sum should be
+            summarized
+        land_area_path (string): path to raster indicating land area
+
+    Returns:
+        the sum of valid pixels in `value_raster_path` intersecting valid
+            pixels in `land_area_path`
+
+    """
+    value_nodata = pygeoprocessing.get_raster_info(
+        value_raster_path)['nodata'][0]
+    land_area_nodata = pygeoprocessing.get_raster_info(
+        land_area_path)['nodata'][0]
+
+    value_raster = gdal.OpenEx(value_raster_path)
+    value_band = value_raster.GetRasterBand(1)
+
+    land_raster = gdal.OpenEx(land_area_path)
+    land_band = land_raster.GetRasterBand(1)
+
+    value_sum = 0
+    try:
+        last_blocksize = None
+        for block_offset in pygeoprocessing.iterblocks(
+                (value_raster_path, 1), offset_only=True):
+            blocksize = (block_offset['win_ysize'], block_offset['win_xsize'])
+
+            if last_blocksize != blocksize:
+                value_array = numpy.zeros(
+                    blocksize,
+                    dtype=pygeoprocessing._gdal_to_numpy_type(value_band))
+                land_array = numpy.zeros(
+                    blocksize,
+                    dtype=pygeoprocessing._gdal_to_numpy_type(land_band))
+                last_blocksize = blocksize
+
+            value_data = block_offset.copy()
+            value_data['buf_obj'] = value_array
+            value_band.ReadAsArray(**value_data)
+
+            land_data = block_offset.copy()
+            land_data['buf_obj'] = land_array
+            land_band.ReadAsArray(**land_data)
+
+            valid_mask = (
+                (~numpy.isclose(value_array, value_nodata)) &
+                (~numpy.isclose(land_array, land_area_nodata)))
+            block_sum = numpy.sum(value_array[valid_mask])
+            value_sum = value_sum + block_sum
+    finally:
+        value_band = None
+        land_band = None
+        gdal.Dataset.__swig_destroy__(value_raster)
+        gdal.Dataset.__swig_destroy__(land_raster)
+
+    return value_sum
+
+
+def calculate_land_area():
+    area_raster = "F:/ESA_landcover_2015/pixel_area_km2.tif"
+    land_area_mask = "F:/ESA_landcover_2015/land_mask.tif"
+    total_land_area = raster_sum_under_land_area(
+        area_raster, land_area_mask)
+    print("Total land area: {} km2".format(total_land_area))
+
+
+def raster_summary(path_list, save_as):
+    """Summarize spatial characteristics of a list of rasters.
+
+    Parameters:
+        path_list (list): list of paths to rasters that should be summarized
+        save_as (string): location to save the summary table
+
+    Side effects:
+        creates a csv table at `save_as` containing pixel size, raster
+            dimensions, projection, and bounding box of the rasters in
+            `path_list`
+
+    Returns:
+        None
+
+    """
+    raster_info_dict = {
+        os.path.basename(path): pygeoprocessing.get_raster_info(
+            path) for path in path_list
+    }
+    df_dict = {
+        'service_basename': [*raster_info_dict],
+        'pixel_size': [
+            raster_info_dict[key]['pixel_size'] for key in raster_info_dict],
+        'raster_size': [
+            raster_info_dict[key]['raster_size'] for key in raster_info_dict],
+        'projection': [
+            raster_info_dict[key]['projection'] for key in raster_info_dict],
+        'bounding_box': [
+            raster_info_dict[key]['bounding_box'] for key in raster_info_dict],
+    }
+    raster_info_df = pandas.DataFrame(df_dict)
+    raster_info_df.to_csv(save_as, index=False)
+
+
+def extract_by_mask(value_raster_path, mask_raster_path, save_as):
+    """Extract the values from one raster lying under valid pixels in mask.
+
+    The two rasters must be aligned and share pixel size.
+
+    Parameters:
+        value_raster_path (string): path to raster containing values to extract
+        mask_raster_path (string): path to raster containing mask, identified
+            by any valid pixels
+        save_as (string): path to location where extracted raster should be
+            saved
+
+    Side effects:
+        creates new raster at the location specified by `save_as`, containing
+            values from `value_raster_path` intersecting. It will have the same
+            data type and nodata value as the value raster
+
+    Returns:
+        None
+
+    """
+    def extract_op(value_ar, mask_ar):
+        valid_mask = (
+            (~numpy.isclose(value_ar, value_nodata)) &
+            (~numpy.isclose(mask_ar, mask_nodata)))
+        extracted = numpy.empty(value_ar.shape, dtype=target_numpy_datatype)
+        extracted[:] = value_nodata
+        extracted[valid_mask] = value_ar[valid_mask]
+        return extracted
+
+    # make sure the two rasters are aligned
+    raster_info_list = [
+        pygeoprocessing.get_raster_info(path)
+        for path in [value_raster_path, mask_raster_path]]
+    size_set = set()
+    for raster_info in raster_info_list:
+        size_set.add(raster_info['raster_size'])
+    if len(size_set) > 1:
+        raise ValueError("Input Rasters are not the same dimensions")
+    # pixel_set = set()
+    # for raster_info in raster_info_list:
+    #     pixel_set.add(raster_info['pixel_size'])
+    # if len(pixel_set) > 1:
+    #     raise ValueError("Input Rasters do not have same pixel size")
+
+    value_nodata = pygeoprocessing.get_raster_info(
+        value_raster_path)['nodata'][0]
+    value_datatype = pygeoprocessing.get_raster_info(
+        value_raster_path)['datatype']
+    mask_nodata = pygeoprocessing.get_raster_info(
+        mask_raster_path)['nodata'][0]
+
+    # get GDAL data type
+    value_raster = gdal.OpenEx(value_raster_path)
+    value_band = value_raster.GetRasterBand(1)
+    target_numpy_datatype = pygeoprocessing._gdal_to_numpy_type(value_band)
+    value_band = None
+    gdal.Dataset.__swig_destroy__(value_raster)
+
+    pygeoprocessing.raster_calculator(
+        [(path, 1) for path in [value_raster_path, mask_raster_path]],
+        extract_op, save_as, value_datatype, value_nodata)
+
+
+def extract_area_by_habitat():
+    """Throwaway."""
+    area_raster = "F:/Data_marine_coastal_habitat/aligned/area_km2.tif"
+    mask_raster = "F:/Data_marine_coastal_habitat/habitat_mosaic.tif"
+    save_as = "F:/Data_marine_coastal_habitat/pixel_area_habitat_mosaic.tif"
+    extract_by_mask(area_raster, mask_raster, save_as)
+
+
+def mosaic_habitat_rasters(target_path):
+    """Mosaic a list of rasters together into one mosaic raster.
+
+    Given a list of rasters depicting habitat, mosaic the rasters together. The
+    result will be a mosaic raster of integer type containing the value "1" in
+    pixels where any of the input rasters has a valid value (i.e., a value
+    other than nodata).
+
+    Parameters:
+        target_path (string): location to save the result
+
+    Side effects:
+        creates a raster at `target_path` containing the value 1 in pixels
+            where any of the input rasters contain a valid value
+
+    Returns:
+        None
+
+    """
+    def mosaic_valid_pixels(*raster_list):
+        """Mosaic valid pixels from a list of rasters.
+
+        Where any raster in raster_list has a value other than nodata, the
+        value in the mosaic should be 1.
+
+        Returns:
+            A raster with the same extent as the rasters in raster_list,
+                containing the value 1 in pixels where any of the rasters in
+                raster_list has a valid value
+        """
+        result = numpy.empty(raster_list[0].shape, dtype=numpy.int16)
+        result[:] = 1
+        invalid_mask = numpy.all(
+            numpy.isclose(numpy.array(raster_list), input_nodata), axis=0)
+        result[invalid_mask] = _TARGET_NODATA
+        return result
+
+    input_dir = "F:/Data_marine_coastal_habitat"
+    # basenames of rasters to mosaic together
+    habitat_raster_bn_list = [
+        '1_2000_mask_md5_91e7f997e1197e4a2abf064095e2179e.tif',
+        '2_1000_mask_md5_f428433ea05cf1c7960ec7ff3995c5aa.tif',
+        '2_2000_mask_md5_1ffc23cd09f748e1fe5a996b72df3757.tif',
+        '4_500_mask_md5_6f48797ca1ab8e953e32288efd0536a4.tif',
+        'ipbes-cv_mangrove_md5_2205f546ab3eb92f9901b3e57258b998.tif',
+        'ipbes-cv_reef_wgs84_compressed_md5_96d95cc4f2c5348394eccff9e8b84e6b.tif',
+        'ipbes-cv_saltmarsh_md5_203d8600fd4b6df91f53f66f2a011bcd.tif',
+        'ipbes-cv_seagrass_md5_a9cc6d922d2e74a14f74b4107c94a0d6.tif']
+    input_path_list = [
+        os.path.join(input_dir, bn) for bn in habitat_raster_bn_list]
+    raster_info_list = [
+        pygeoprocessing.get_raster_info(path) for path in input_path_list]
+    # pixel_size_set = set([info['pixel_size'] for info in raster_info_list])
+    # if len(pixel_size_set) > 1:
+    #     raise ValueError("Input rasters contain more than one pixel size")
+    input_pixel_size = pygeoprocessing.get_raster_info(
+        input_path_list[0])['pixel_size']
+    nodata_value_set = set([info['nodata'][0] for info in raster_info_list])
+    if len(nodata_value_set) > 1:
+        raise ValueError("Input rasters contain more than one nodata value")
+    input_nodata = list(nodata_value_set)[0]
+
+    aligned_dir = os.path.join(input_dir, 'aligned')
+    if not os.path.exists(aligned_dir):
+        os.makedirs(aligned_dir)
+    aligned_path_list = [
+        os.path.join(aligned_dir, bn) for bn in habitat_raster_bn_list]
+    # pygeoprocessing.align_and_resize_raster_stack(
+    #     input_path_list, aligned_path_list, ['near'] * len(input_path_list),
+    #     input_pixel_size, 'union')
+    pygeoprocessing.raster_calculator(
+        [(path, 1) for path in aligned_path_list], mosaic_valid_pixels,
+        target_path, gdal.GDT_Int16, _TARGET_NODATA)
+
+
+
+def merge_data_frame_list(df_path_list, fid_field, save_as):
+    """Merge the data frames in `df_path_list` and save as one data frame.
+
+    Merge each data frame in `df_path_list` into a single data frame. Save this
+    merged data frame as `save_as`.
+
+    Parameters:
+        df_path_list (list): list of file paths indicating locations of data
+            frames that should be merged. Each must include a column fid_field
+            identifying unique watersheds or monitoring stations, and a column
+            of covariate data
+        fid_field (string): field that identifies features
+        save_as (string): path to location on disk where the result should be
+            saved
+
+    Returns:
+        None
+
+    """
+    combined_df = pandas.read_csv(df_path_list[0])
+    df_i = 1
+    while df_i < len(df_path_list):
+        combined_df = combined_df.merge(
+            pandas.read_csv(df_path_list[df_i]), on=fid_field,
+            suffixes=(False, False), validate="one_to_one")
+        df_i = df_i + 1
+    combined_df.to_csv(save_as, index=False)
+
+
+def map_FID_to_field(shp_path, field):
+    """Map FID of each feature, according to GetFID(), to the given field.
+
+    This allows for mapping of a dictionary of zonal statistics, where keys
+    correspond to FID according to GetFID(), to another field that is preferred
+    to identify features.
+
+    Parameters:
+        shp_path (string): path to shapefile
+        field (string): the field to map to FID
+
+    Returns:
+        dictionary indexed by the FID of each feature retrieved with GetFID(),
+            and values are the value of `field` for the feature
+
+    """
+    vector = gdal.OpenEx(shp_path, gdal.OF_VECTOR)
+    layer = vector.GetLayer()
+    FID_to_field = {
+        feature.GetFID(): feature.GetField(field) for feature in layer}
+
+    # clean up
+    vector = None
+    layer = None
+    return FID_to_field
+
+
+def service_zonal_stats(aggregate_vector_path, fid_field, output_dir, save_as):
+    """Calculate zonal stats from service rasters within polygon features.
+
+    Parameters:
+        aggregate_vector_path (string): a path to a polygon vector containing
+            zones to summarize services within
+        fid_field (string): field in aggregate_vector_path that identifies
+            features
+        output_dir (string): path to directory to store results and
+            intermediate files
+        save_as (string): file location to save summarized zonal statistics
+
+    Returns:
+        None
+
+    """
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    service_raster_dir = "F:/Data_service_rasters"
+    service_raster_bn_list = [
+        f for f in os.listdir(service_raster_dir) if f.endswith('.tif')]
+    service_raster_bn_list.remove(
+        'realized_natureaccess10_nathab_md5_af07e76ecea7fb5be0fa307dc7ff4eed.tif')
+    service_raster_bn_list.remove(
+        'realized_natureaccess100_nathab_md5_ac72bb0f6c0460d7d48f7ee25e161b0f.tif')
+    service_raster_path_list = [
+        os.path.join(service_raster_dir, bn) for bn in service_raster_bn_list]
+    service_raster_path_list.append(
+        "F:/Data_service_rasters/natureaccess_aligned/realized_natureaccess100_nathab_md5_ac72bb0f6c0460d7d48f7ee25e161b0f.tif")
+    fid_to_objectid = map_FID_to_field(aggregate_vector_path, fid_field)
+    df_path_list = []
+    for raster_path in service_raster_path_list:
+        colname = os.path.basename(raster_path)[9:15]
+        intermediate_path = os.path.join(
+            output_dir, 'zonal_stat_biome_{}.csv'.format(colname))
+        df_path_list.append(intermediate_path)
+        if not os.path.exists(intermediate_path):
+            zonal_stat_dict = pygeoprocessing.zonal_statistics(
+                (raster_path, 1), aggregate_vector_path,
+                polygons_might_overlap=False)
+            objectid_zonal_stats_dict = {
+                objectid: zonal_stat_dict[fid] for (fid, objectid) in
+                fid_to_objectid.items()
+            }
+            zonal_df = pandas.DataFrame(
+                {
+                    fid_field: [
+                        key for key, value in sorted(
+                            objectid_zonal_stats_dict.items())],
+                    '{}_sum'.format(colname): [
+                        value['sum'] for key, value in
+                        sorted(objectid_zonal_stats_dict.items())],
+                    '{}_count'.format(colname): [
+                        value['count'] for key, value in
+                        sorted(objectid_zonal_stats_dict.items())]
+                })
+            zonal_df['{}_mean'.format(colname)] = (
+                zonal_df['{}_sum'.format(colname)] /
+                zonal_df['{}_count'.format(colname)])
+            zonal_df.to_csv(intermediate_path, index=False)
+    merge_data_frame_list(df_path_list, fid_field, save_as)
+
+
+def biome_zonal_stats():
+    """Calculate zonal stats from service rasters within biomes."""
+    biome_shp_path = "F:/Data_terrestrial_ecoregions/wwf_terr_ecos_diss.shp"
+    fid_field = 'OBJECTID'
+    output_dir = "C:/Users/ginge/Dropbox/NatCap_backup/KBA+ES/processing_2020/zonal_stats_biome"
+    save_as = os.path.join(output_dir, 'zonal_stat_biome_combined.csv')
+    service_zonal_stats(biome_shp_path, fid_field, output_dir, save_as)
+
+
+def country_zonal_stats():
+    """Calculate zonal stats from service rasters within countries."""
+    countries_shp_path = "F:/Data_service_rasters/service_by_country/TM_WORLD_BORDERS-0.3.shp"
+    fid_field = 'ISO3'
+    output_dir = "C:/Users/ginge/Dropbox/NatCap_backup/KBA+ES/processing_2020/zonal_stats_countries"
+    save_as = os.path.join(output_dir, 'zonal_stat_countries_combined.csv')
+    service_zonal_stats(countries_shp_path, fid_field, output_dir, save_as)
+
+
 if __name__ == '__main__':
     pollination_workspace = "F:/"
     # pollination_workflow(pollination_workspace)
@@ -1949,5 +2342,11 @@ if __name__ == '__main__':
     ndr_workspace = 'F:/ndr_workspace'
     # ndr_workflow(ndr_workspace)
     lpjguess_workspace = 'F:/carbon_lpj_guess_workspace/'
-    LPJ_carbon_workflow(lpjguess_workspace)
+    # LPJ_carbon_workflow(lpjguess_workspace)
     # area_of_kbas(lpjguess_workspace)
+    # extract_area_by_land()
+    target_path = "F:/Data_marine_coastal_habitat/habitat_mosaic.tif"
+    # mosaic_habitat_rasters(target_path)
+    # extract_area_by_habitat()
+    # biome_zonal_stats()
+    country_zonal_stats()
