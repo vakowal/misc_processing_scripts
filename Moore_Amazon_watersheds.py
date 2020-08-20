@@ -447,10 +447,237 @@ def process_hansen_tiles(out_dir):
     # merge subsetted frequency tables
 
 
+def calc_disjoint_set():
+    disjoint_set = pygeoprocessing.calculate_disjoint_polygon_set(
+        _WATERSHEDS_PATH, 'watersheds')
+    print(disjoint_set)
+
+
+def summarize_climate_change():
+    """Calculate mean percent change in monthly precipitation in the future."""
+    def id_change_from_zero(current, future):
+        problem_mask = ((current == 0) & (future > 0))
+        result = numpy.empty(current.shape, dtype=numpy.float32)
+        result[:] = current_nodata
+        result[problem_mask] = 100
+        return result
+
+    def calc_percent_change(current, future):
+        """Calculate percent change in future relative to current."""
+        valid_mask = (
+            (~numpy.isclose(current, current_nodata)) &
+            (~numpy.isclose(future, future_nodata)))
+        zero_mask = ((current == 0) & (future == 0))
+        divide_mask = ((current > 0) & valid_mask)
+        result = numpy.empty(current.shape, dtype=numpy.float32)
+        result[:] = current_nodata
+        result[zero_mask] = 0
+        result[divide_mask] = (
+            (future[divide_mask] - current[divide_mask]) / current[divide_mask]
+            * 100)
+        return result
+
+    def raster_mean_op(*raster_list):
+        """Calculate the mean value pixel-wise from rasters in raster_list."""
+        valid_mask = numpy.any(
+            ~numpy.isclose(numpy.array(raster_list), current_nodata), axis=0)
+        # get number of valid observations per pixel
+        num_observations = numpy.count_nonzero(
+            ~numpy.isclose(numpy.array(raster_list), current_nodata), axis=0)
+        for r in raster_list:
+            numpy.place(r, numpy.isclose(r, current_nodata), [0])
+        sum_of_rasters = numpy.sum(raster_list, axis=0)
+
+        divide_mask = (
+            (sum_of_rasters > 0) &
+            (num_observations > 0) &
+            valid_mask)
+
+        mean_of_rasters = numpy.empty(
+            sum_of_rasters.shape, dtype=numpy.float32)
+        mean_of_rasters[:] = current_nodata
+        mean_of_rasters[valid_mask] = 0
+        mean_of_rasters[divide_mask] = numpy.divide(
+            sum_of_rasters[divide_mask], num_observations[divide_mask])
+        return mean_of_rasters
+
+    climate_dir = "C:/Users/ginge/Desktop/climate"
+    year = 2050  # for year in [2050, 2070]:
+
+    # pattern that can be used to identify current rasters, 1 for each month
+    current_pattern = os.path.join(
+        climate_dir, 'historical_precip/wc2.1_5m_prec_{:02d}.tif')
+    # pattern that can be used to identify future rasters, 1 for each month
+    if year == 2050:
+        future_pattern = os.path.join(
+            climate_dir, "future_precip/MIROC-ESM-CHEM/RCP4.5",
+            '{}'.format(year), "mi45pr50{}.tif")
+    else:
+        future_pattern = os.path.join(
+            climate_dir, "future_precip/MIROC-ESM-CHEM/RCP4.5",
+            '{}'.format(year), "mi45pr70{}.tif")
+
+    intermediate_dir = os.path.join(climate_dir, "intermediate")
+    if not os.path.exists(intermediate_dir):
+        os.makedirs(intermediate_dir)
+    output_dir = os.path.join(climate_dir, "output")
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
+    # align current and future rasters
+    base_raster_path_list = (
+        [current_pattern.format(i) for i in range(1, 13)] +
+        [future_pattern.format(i) for i in range(1, 13)])
+    target_raster_path_list = (
+        [os.path.join(
+            intermediate_dir,
+            'current{}.tif'.format(i)) for i in range(1, 13)] +
+        [os.path.join(
+            intermediate_dir,
+            'future{}.tif'.format(i)) for i in range(1, 13)])
+    raster_info = pygeoprocessing.get_raster_info(base_raster_path_list[0])
+    pygeoprocessing.align_and_resize_raster_stack(
+        base_raster_path_list, target_raster_path_list, ['near'] *
+        len(base_raster_path_list), raster_info['pixel_size'], 'union')
+
+    # calculate percent change per pixel for each month
+    current_nodata = pygeoprocessing.get_raster_info(
+        os.path.join(intermediate_dir, 'current1.tif'))['nodata'][0]
+    future_nodata = pygeoprocessing.get_raster_info(
+        os.path.join(intermediate_dir, 'future1.tif'))['nodata'][0]
+    for mon in range(1, 13):
+        target_path = os.path.join(
+            intermediate_dir, 'perc_change_{}.tif'.format(mon))
+        pygeoprocessing.raster_calculator([
+            (os.path.join(intermediate_dir, 'current{}.tif'.format(mon)), 1),
+            (os.path.join(intermediate_dir, 'future{}.tif'.format(mon)), 1)],
+            calc_percent_change, target_path, gdal.GDT_Float32,
+            current_nodata)
+
+    # identify problematic areas
+    # for mon in range(1, 13):
+    #     target_path = os.path.join(
+    #         intermediate_dir, 'problematic_{}.tif'.format(mon))
+    #     pygeoprocessing.raster_calculator([
+    #         (os.path.join(intermediate_dir, 'current{}.tif'.format(mon)), 1),
+    #         (os.path.join(intermediate_dir, 'future{}.tif'.format(mon)), 1)],
+    #         id_change_from_zero, target_path, gdal.GDT_Float32,
+    #         current_nodata)
+    # import pdb; pdb.set_trace()
+    # print("Intermission: check out problematic areas")
+
+    # calculate mean percent change across months
+    monthly_path_list = [
+        os.path.join(intermediate_dir, 'perc_change_{}.tif'.format(m)) for m
+        in range(1, 13)]
+    mean_ch_path = os.path.join(intermediate_dir, 'mean_perc_change.tif')
+    pygeoprocessing.raster_calculator(
+        [(path, 1) for path in monthly_path_list], raster_mean_op,
+        mean_ch_path, gdal.GDT_Float32, current_nodata)
+
+    # extract mean percent change to approximate aoi
+    target_pixel_size = pygeoprocessing.get_raster_info(
+        mean_ch_path)['pixel_size']
+    target_bb = [-78, -29, -43, 4]  # I cheated
+    mean_perc_masked = os.path.join(intermediate_dir, 'mean_perc_ch_mask.tif')
+    pygeoprocessing.warp_raster(
+        mean_ch_path, target_pixel_size, mean_perc_masked, 'near',
+        target_bb=target_bb)
+
+    # reproject mean change raster to conform to watersheds
+    # this is not working
+    # target_sr = pygeoprocessing.get_vector_info(
+    #     _WATERSHEDS_PATH, 'watersheds')['projection']
+    # proj_pixel_size = (9587.1095591824851, -9587.1095591824851)  # I cheated
+    # pygeoprocessing.warp_raster(
+    #     mean_perc_masked, proj_pixel_size, mean_ch_proj, 'near',
+    #     target_sr_wkt=target_sr)
+    mean_ch_proj = os.path.join(intermediate_dir, 'mean_perc_change_pr.tif')
+    import pdb; pdb.set_trace()
+    print("intermission; create projected raster in QGIS")
+
+    # calculate zonal mean percent change within watersheds
+    change_dict = pygeoprocessing.zonal_statistics(
+        (mean_ch_proj, 1), _WATERSHEDS_PATH, 'watersheds')
+    change_df_t = pandas.DataFrame(change_dict)
+    change_df = change_df_t.transpose()
+    change_df['fid'] = change_df.index
+    change_df['mean_percent_change'] = change_df['sum'] / change_df['count']
+    change_df.drop(
+        ['min', 'max', 'count', 'nodata_count', 'sum'], axis='columns',
+        inplace=True)
+    table_path = os.path.join(
+        output_dir, 'mean_percent_change_precip_{}.csv'.format(year))
+    change_df.to_csv(table_path, index=False)
+
+    # clean up
+    shutil.rmtree(intermediate_dir)
+
+
+def process_WDPA_intersect_tables():
+    """Combine tables of protected area features intersecting watersheds."""
+    # derive full table of WDPA features: rbind these two tables
+    wdpa_point = pandas.read_csv("C:/Users/ginge/Desktop/wdpa_export_intermediate/WDPA_point.csv")
+    wdpa_poly = pandas.read_csv("C:/Users/ginge/Desktop/wdpa_export_intermediate/WDPA_polygon.csv")
+    wdpa_df = pandas.concat([wdpa_point, wdpa_poly])
+    # a few protected areas are composed of sub-parcels.
+    # here we keep info for just one parcel of the protected area
+    wdpa_df.drop_duplicates(subset=['WDPAID'], inplace=True)
+
+    df_list = []
+    subs_dir = "C:/Users/ginge/Desktop/watershed_subsets/fixed_geom"
+    for sub in range(9):
+        poly_df = pandas.read_csv(
+            os.path.join(subs_dir, 'polyjoin_s{}.csv'.format(sub)))
+        poly_df = poly_df[['fid', 'WDPAID']]
+        df_list.append(poly_df)
+        point_df = pandas.read_csv(
+            os.path.join(subs_dir, 'pointsjoin_s{}.csv'.format(sub)))
+        point_df = point_df[['fid', 'WDPAID']]
+        df_list.append(point_df)
+    combined_df = pandas.concat(df_list)
+    combined_df = combined_df.merge(
+        wdpa_df, on='WDPAID', suffixes=(False, False), validate="many_to_one")
+    save_as = "G:/Shared drives/Moore Amazon Hydro/1_base_data/Other/watershed_characteristics/WDPA_intersect_watersheds.csv"
+    combined_df.to_csv(save_as, index=False)
+
+
+def count_protected_areas():
+    wdpa_df = pandas.read_csv("G:/Shared drives/Moore Amazon Hydro/1_base_data/Other/watershed_characteristics/WDPA_intersect_watersheds.csv")
+    wdpa_count = wdpa_df[['fid', 'WDPAID']].groupby('fid').count()
+    wdpa_count.rename(
+        columns={'WDPAID': 'num_intersecting_PA'}, inplace=True)
+    wdpa_count.reset_index(inplace=True)
+    wdpa_count.to_csv(
+        "C:/Users/ginge/Desktop/WDPA_intersect_count.csv", index=False)
+
+
+def process_WDPA_area_tables():
+    df_list = []
+    subs_dir = "C:/Users/ginge/Desktop/watershed_subsets/fixed_geom/intersection"
+    for sub in range(9):
+        df_list.append(
+            pandas.read_csv(os.path.join(subs_dir, 's{}.csv'.format(sub))))
+    combined_df = pandas.concat(df_list)
+    area_sum = combined_df[['fid', 'area_ha']].groupby('fid').sum()
+    area_sum.rename(
+        columns={'area_ha': 'area_ha_intersecting_PA'}, inplace=True)
+    area_sum.reset_index(inplace=True)
+    area_sum.to_csv(
+        "C:/Users/ginge/Desktop/WDPA_intersect_area.csv", index=False)
+
+
+
 if __name__ == "__main__":
+    __spec__ = None  # for running with pdb
     out_dir = "C:/Users/ginge/Desktop/watershed_characteristics"
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
     # summarize_terrain(out_dir)
     # summarize_landcover(out_dir)
-    process_hansen_tiles(out_dir)
+    # process_hansen_tiles(out_dir)
+    # calc_disjoint_set()
+    # summarize_climate_change()
+    # process_WDPA_intersect_tables()
+    # count_protected_areas()
+    process_WDPA_area_tables()
