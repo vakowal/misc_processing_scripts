@@ -2280,14 +2280,21 @@ def service_zonal_stats(aggregate_vector_path, fid_field, output_dir, save_as):
         os.path.join(service_raster_dir, bn) for bn in service_raster_bn_list]
     service_raster_path_list.append(
         "F:/Data_service_rasters/natureaccess_aligned/realized_natureaccess100_nathab_md5_ac72bb0f6c0460d7d48f7ee25e161b0f.tif")
+    service_raster_path_list.append(
+        "F:/Data_service_rasters/natureaccess_aligned/realized_natureaccess10_nathab_md5_af07e76ecea7fb5be0fa307dc7ff4eed.tif")
     fid_to_objectid = map_FID_to_field(aggregate_vector_path, fid_field)
     df_path_list = []
     for raster_path in service_raster_path_list:
-        colname = os.path.basename(raster_path)[9:15]
+        if os.path.basename(raster_path).startswith('realized_nature'):
+            colname = os.path.basename(raster_path)[9:24]
+        else:
+            colname = os.path.basename(raster_path)[9:15]
         intermediate_path = os.path.join(
             output_dir, 'zonal_stat_biome_{}.csv'.format(colname))
         df_path_list.append(intermediate_path)
         if not os.path.exists(intermediate_path):
+            print("processing {} under {}".format(
+                colname, aggregate_vector_path))
             zonal_stat_dict = pygeoprocessing.zonal_statistics(
                 (raster_path, 1), aggregate_vector_path,
                 polygons_might_overlap=False)
@@ -2348,5 +2355,5 @@ if __name__ == '__main__':
     target_path = "F:/Data_marine_coastal_habitat/habitat_mosaic.tif"
     # mosaic_habitat_rasters(target_path)
     # extract_area_by_habitat()
-    # biome_zonal_stats()
+    biome_zonal_stats()
     country_zonal_stats()

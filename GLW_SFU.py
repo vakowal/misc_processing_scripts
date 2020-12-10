@@ -8,8 +8,10 @@ from osgeo import gdal
 
 import pygeoprocessing
 
-_DATA_DIR = "E:/GIS_local_archive/General_useful_data/GLW3_Livestock_of_the_World"
-_AOI_SHP = "E:/GIS_local/Mongolia/boundaries_etc/soums_monitoring_area_dissolve.shp"
+# _DATA_DIR = "E:/GIS_local_archive/General_useful_data/GLW3_Livestock_of_the_World"
+_DATA_DIR = "F:/NCI_NDR/Data GLW"
+# _AOI_SHP = "E:/GIS_local/Mongolia/boundaries_etc/soums_monitoring_area_dissolve.shp"
+_AOI_SHP = "C:/Users/ginge/Desktop/Mongolia.shp"
 _TARGET_NODATA = -1
 
 
@@ -177,7 +179,7 @@ def main(result_dir):
         raw_input_list = []
         for animal_type in animal_info_dict.keys():
             base_raster_path = os.path.join(
-                _DATA_DIR, animal_type, '{}_{}_2010_{}.tif'.format(
+                _DATA_DIR, '{}_{}_2010_{}.tif'.format(
                     file_index, animal_info_dict[animal_type]['abbreviation'],
                     resampling_method))
             temp_val_dict['base_{}'.format(animal_type)] = base_raster_path
@@ -266,10 +268,11 @@ def calculate_mean_density_RPM():
 
 if __name__ == '__main__':
     # result_dir = os.path.join(_DATA_DIR, 'SFU_equivalent')
-    # temp_dir = main(result_dir)
-    # import pdb; pdb.set_trace()
+    result_dir = "C:/Users/ginge/Desktop/SFU_equivalent_Mongolia"
+    temp_dir = main(result_dir)
+    import pdb; pdb.set_trace()
 
-    # # clean up
-    # shutil.rmtree(temp_dir)
+    # clean up
+    shutil.rmtree(temp_dir)
 
-    calculate_mean_density_RPM()
+    # calculate_mean_density_RPM()

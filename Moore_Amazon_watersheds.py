@@ -18,7 +18,7 @@ LOGGER = logging.getLogger(__name__)
 _LOGGING_PERIOD = 5.0  # min 5.0 seconds per update log message for the module
 
 # watersheds for long-listed dams
-_WATERSHEDS_PATH = "G:/Shared drives/Moore Amazon Hydro/1_base_data/Vector_data/dam_subset_8.12.20/watersheds_dam_subset_black_orange.gpkg"
+_WATERSHEDS_PATH = "C:/Users/ginge/Desktop/watershed_subsets/watersheds_ESPG3857_fixgeom.gpkg"
 
 # base data to summarize
 _BASE_DATA_DICT = {
@@ -431,6 +431,43 @@ def summarize_landcover(out_dir):
     percent_df.to_csv(percent_path, index=True)
 
 
+def summarize_ssp_landcover(out_dir):
+    """Get count of all landcover categories for future SSPs in Chaglla."""
+    # landcover_path_dict = {
+    #     'current': "F:/Moore_Amazon_backups/Chaplin-Kramer_etal_future_land_use/Clipped_to_Chaglla/Globio4_landuse_10sec_2015.tif",
+    #     'SSP1': "F:/Moore_Amazon_backups/Chaplin-Kramer_etal_future_land_use/Clipped_to_Chaglla/GLOBIO4_LU_10sec_2050_SSP1_RCP26.tif",
+    #     'SSP3': "F:/Moore_Amazon_backups/Chaplin-Kramer_etal_future_land_use/Clipped_to_Chaglla/GLOBIO4_LU_10sec_2050_SSP3_RCP70.tif",
+    #     'SSP5': "F:/Moore_Amazon_backups/Chaplin-Kramer_etal_future_land_use/Clipped_to_Chaglla/GLOBIO4_LU_10sec_2050_SSP5_RCP85.tif",
+    # }
+    # shp_path = "G:/Shared drives/Moore Amazon Hydro/1_base_data/Vector_data/Chaglla_dam_watershed.shp"
+    landcover_path_dict = {
+        'current': "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_esa_2015_reclassified_to_seals_simplified.tif",
+        'SSP3_2050': "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_RCP7.0_SSP3_2050.tif",
+        'SSP3_2070': "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_RCP7.0_SSP3_2070.tif",
+        'SSP5_2050': "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_RCP8.5_SSP5_2050.tif",
+        'SSP5_2070': "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_RCP8.5_SSP5_2070.tif",
+        'SSP1_2050': "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_RCP2.6_SSP1_2050.tif",
+        'SSP1_2070': "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_RCP2.6_SSP1_2070.tif",
+    }
+    shp_path = "G:/Shared drives/Moore Amazon Hydro/1_base_data/Vector_data/Chaglla_dam_watershed_WGS84.shp"
+    df_list = []
+    for ssp in landcover_path_dict:
+        landcover_dict = zonal_histogram(
+            (landcover_path_dict[ssp], 1), shp_path)
+        landcover_df = pandas.DataFrame(landcover_dict)
+        landcover_df['lulc_code'] = landcover_df.index
+        landcover_df.rename(columns={0: '{}_count'.format(ssp)}, inplace=True)
+        df_list.append(landcover_df)
+    combined_df = df_list[0]
+    df_i = 1
+    while df_i < len(df_list):
+        combined_df = combined_df.merge(
+            df_list[df_i], how='outer', on='lulc_code')
+        df_i = df_i + 1
+    save_as = os.path.join(out_dir, 'landcover_count_summary.csv')
+    combined_df.to_csv(save_as, index=False)
+
+
 def process_hansen_tiles(out_dir):
     # merge and project selected tiles in 4 subsets covering study watersheds
     # for subset in ['s2', 's3']:
@@ -489,7 +526,6 @@ def summarize_climate_change():
         sum_of_rasters = numpy.sum(raster_list, axis=0)
 
         divide_mask = (
-            (sum_of_rasters > 0) &
             (num_observations > 0) &
             valid_mask)
 
@@ -501,7 +537,7 @@ def summarize_climate_change():
             sum_of_rasters[divide_mask], num_observations[divide_mask])
         return mean_of_rasters
 
-    climate_dir = "C:/Users/ginge/Desktop/climate"
+    climate_dir = "F:/Moore_Amazon_backups/climate"
     year = 2050  # for year in [2050, 2070]:
 
     # pattern that can be used to identify current rasters, 1 for each month
@@ -670,7 +706,7 @@ def process_WDPA_area_tables():
 
 if __name__ == "__main__":
     __spec__ = None  # for running with pdb
-    out_dir = "C:/Users/ginge/Desktop/watershed_characteristics"
+    out_dir = "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use"
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
     # summarize_terrain(out_dir)
@@ -680,4 +716,5 @@ if __name__ == "__main__":
     # summarize_climate_change()
     # process_WDPA_intersect_tables()
     # count_protected_areas()
-    process_WDPA_area_tables()
+    # process_WDPA_area_tables()
+    summarize_ssp_landcover(out_dir)
