@@ -11,6 +11,7 @@ import numpy
 
 from osgeo import gdal
 from osgeo import ogr
+from osgeo import osr
 
 import pygeoprocessing
 
@@ -375,6 +376,126 @@ def zonal_histogram(
     return dict(aggregate_stats)
 
 
+def clip_and_project_raster(
+        base_raster_path, clipping_box, target_srs_wkt, model_resolution,
+        working_dir, file_suffix, target_raster_path):
+    """Clip a raster to a box in the raster's native SRS, then reproject.
+
+    This was stolen from natcap.invest.coastal_vulnerability.py
+    Args:
+        base_raster_path (string): path to a gdal raster
+        clipping_box (list): sequence of floats that are coordinates in the
+            target_srs [minx, miny, maxx, maxy]
+        target_srs_wkt (string): well-known-text spatial reference system
+        model_resolution (float): value for target pixel size
+        working_dir (string): path to directory for intermediate files
+        file_suffix (string): appended to any output filename.
+        target_raster_path (string): path to clipped and warped raster.
+
+    Returns:
+        None
+
+    """
+    base_srs_wkt = pygeoprocessing.get_raster_info(
+        base_raster_path)['projection_wkt']
+
+    # 'base' and 'target' srs are with respect to the base and target raster,
+    # so first the clipping box needs to go from 'target' to 'base' srs
+    base_srs_clipping_box = pygeoprocessing.transform_bounding_box(
+        clipping_box, target_srs_wkt, base_srs_wkt, edge_samples=11)
+
+    clipped_raster_path = os.path.join(
+        working_dir,
+        os.path.basename(
+            os.path.splitext(
+                base_raster_path)[0]) + '_clipped%s.tif' % file_suffix)
+
+    base_pixel_size = pygeoprocessing.get_raster_info(
+        base_raster_path)['pixel_size']
+
+    # Clip in the raster's native srs
+    pygeoprocessing.warp_raster(
+        base_raster_path, base_pixel_size, clipped_raster_path,
+        'bilinear', target_bb=base_srs_clipping_box)
+
+    # If base raster is projected, convert its pixel size to meters.
+    # Otherwise use the model resolution as target pixel size in Warp.
+    base_srs = osr.SpatialReference()
+    base_srs.ImportFromWkt(base_srs_wkt)
+    if bool(base_srs.IsProjected()):
+        scalar_to_meters = base_srs.GetLinearUnits()
+        target_pixel_size = tuple(
+            numpy.multiply(base_pixel_size, scalar_to_meters))
+    else:
+        LOGGER.warning(
+            '%s is unprojected and will be warped to match the AOI '
+            'and resampled to a pixel size of %d meters',
+            base_raster_path, model_resolution)
+        target_pixel_size = (model_resolution, model_resolution * -1)
+
+    # Warp to the target SRS
+    pygeoprocessing.warp_raster(
+        clipped_raster_path, target_pixel_size, target_raster_path,
+        'bilinear', target_projection_wkt=target_srs_wkt)
+
+
+def raster_list_sum(
+        raster_list, input_nodata, target_path, target_nodata,
+        nodata_remove=False):
+    """Calculate the sum per pixel across rasters in a list.
+
+    Sum the rasters in `raster_list` element-wise, allowing nodata values
+    in the rasters to propagate to the result or treating nodata as zero. If
+    nodata is treated as zero, areas where all inputs are nodata will be nodata
+    in the output.
+
+    Parameters:
+        raster_list (list): list of paths to rasters to sum
+        input_nodata (float or int): nodata value in the input rasters
+        target_path (string): path to location to store the result
+        target_nodata (float or int): nodata value for the result raster
+        nodata_remove (bool): if true, treat nodata values in input
+            rasters as zero. If false, the sum in a pixel where any input
+            raster is nodata is nodata.
+
+    Side effects:
+        modifies or creates the raster indicated by `target_path`
+
+    Returns:
+        None
+
+    """
+    def raster_sum_op(*raster_list):
+        """Add the rasters in raster_list without removing nodata values."""
+        invalid_mask = numpy.any(
+            numpy.isclose(numpy.array(raster_list), input_nodata), axis=0)
+        for r in raster_list:
+            numpy.place(r, numpy.isclose(r, input_nodata), [0])
+        sum_of_rasters = numpy.sum(raster_list, axis=0)
+        sum_of_rasters[invalid_mask] = target_nodata
+        return sum_of_rasters
+
+    def raster_sum_op_nodata_remove(*raster_list):
+        """Add the rasters in raster_list, treating nodata as zero."""
+        invalid_mask = numpy.all(
+            numpy.isclose(numpy.array(raster_list), input_nodata), axis=0)
+        for r in raster_list:
+            numpy.place(r, numpy.isclose(r, input_nodata), [0])
+        sum_of_rasters = numpy.sum(raster_list, axis=0)
+        sum_of_rasters[invalid_mask] = target_nodata
+        return sum_of_rasters
+
+    if nodata_remove:
+        pygeoprocessing.raster_calculator(
+            [(path, 1) for path in raster_list], raster_sum_op_nodata_remove,
+            target_path, gdal.GDT_Float32, target_nodata)
+
+    else:
+        pygeoprocessing.raster_calculator(
+            [(path, 1) for path in raster_list], raster_sum_op,
+            target_path, gdal.GDT_Float32, target_nodata)
+
+
 def summarize_terrain(out_dir):
     elevation_dict = pygeoprocessing.zonal_statistics(
         (_BASE_DATA_DICT['elevation'], 1), _WATERSHEDS_PATH, 'watersheds')
@@ -429,6 +550,39 @@ def summarize_landcover(out_dir):
     percent_df = landcover_df.div(landcover_df.sum(axis=1), axis=0)
     percent_path = os.path.join(out_dir, 'landcover_percent.csv')
     percent_df.to_csv(percent_path, index=True)
+
+
+def ssp_change_maps(out_dir):
+    """Make maps showing where landuse is different in the SSPs."""
+    def detect_change(future_arr, current_arr):
+        valid_mask = (
+            (~numpy.isclose(future_arr, future_nodata)) &
+            (~numpy.isclose(current_arr, current_nodata)))
+        same_mask = (
+            (future_arr == current_arr) &
+            valid_mask)
+        result = numpy.copy(future_arr)
+        result[same_mask] = future_nodata
+        return result
+
+    current_path = "G:/Shared drives/Moore Amazon Hydro/1_base_data/Raster_data/SEALS_future_land_use/lulc_esa_2015_reclassified_to_seals_simplified.tif"
+    landcover_path_dict = {
+        'SSP3_2070': "G:/Shared drives/Moore Amazon Hydro/1_base_data/Raster_data/SEALS_future_land_use/lulc_RCP70_SSP3_2070.tif",
+        'SSP5_2070': "G:/Shared drives/Moore Amazon Hydro/1_base_data/Raster_data/SEALS_future_land_use/lulc_RCP85_SSP5_2070.tif",
+        'SSP1_2070': "G:/Shared drives/Moore Amazon Hydro/1_base_data/Raster_data/SEALS_future_land_use/lulc_RCP26_SSP1_2070.tif",
+    }
+    current_nodata = pygeoprocessing.get_raster_info(current_path)['nodata'][0]
+    future_nodata = pygeoprocessing.get_raster_info(
+        landcover_path_dict['SSP3_2070'])['nodata'][0]
+
+    change_dir = os.path.join(out_dir, 'change_maps')
+    if not os.path.exists(change_dir):
+        os.makedirs(change_dir)
+    for ssp in landcover_path_dict:
+        target_path = os.path.join(change_dir, 'change_{}.tif'.format(ssp))
+        pygeoprocessing.raster_calculator(
+            [(path, 1) for path in [landcover_path_dict[ssp], current_path]],
+            detect_change, target_path, gdal.GDT_Int32, future_nodata)
 
 
 def summarize_ssp_landcover(out_dir):
@@ -537,20 +691,22 @@ def summarize_climate_change():
             sum_of_rasters[divide_mask], num_observations[divide_mask])
         return mean_of_rasters
 
-    climate_dir = "F:/Moore_Amazon_backups/climate"
+    climate_dir = "E:/GIS_local_archive/General_useful_data"
     year = 2050  # for year in [2050, 2070]:
 
     # pattern that can be used to identify current rasters, 1 for each month
     current_pattern = os.path.join(
-        climate_dir, 'historical_precip/wc2.1_5m_prec_{:02d}.tif')
+        climate_dir, 'Worldclim_2.1/wc2.1_5m_prec_{:02d}.tif')
     # pattern that can be used to identify future rasters, 1 for each month
     if year == 2050:
         future_pattern = os.path.join(
-            climate_dir, "future_precip/MIROC-ESM-CHEM/RCP4.5",
+            climate_dir,
+            "Worldclim_future_climate/cmip5/MIROC-ESM-CHEM/RCP4.5",
             '{}'.format(year), "mi45pr50{}.tif")
     else:
         future_pattern = os.path.join(
-            climate_dir, "future_precip/MIROC-ESM-CHEM/RCP4.5",
+            climate_dir,
+            "Worldclim_future_climate/cmip5/MIROC-ESM-CHEM/RCP4.5",
             '{}'.format(year), "mi45pr70{}.tif")
 
     intermediate_dir = os.path.join(climate_dir, "intermediate")
@@ -703,6 +859,183 @@ def process_WDPA_area_tables():
         "C:/Users/ginge/Desktop/WDPA_intersect_area.csv", index=False)
 
 
+def reclassify_soil_group():
+    """Reclassify soil group raster to integers 1:4, for SWY model."""
+    in_raster_path = "C:/Users/ginge/Desktop/soil_group.tif"
+    target_path = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/hydrologic_soil_group.tif"
+    input_info = pygeoprocessing.get_raster_info(in_raster_path)
+
+    # from the HYSOGs250m documentation
+    value_map = {
+        1: 1,
+        2: 2,
+        3: 3,
+        4: 4,
+        11: 4,
+        12: 4,
+        13: 4,
+        14: 4,
+    }
+    pygeoprocessing.reclassify_raster(
+        (in_raster_path, 1), value_map, target_path, input_info['datatype'],
+        input_info['nodata'][0])
+
+
+def extract_et_rasters():
+    """Extract reference evapotranspiration rasters to aoi."""
+    aoi_path = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/Chaglla_buffer_aoi.shp"
+    input_pattern = "E:/GIS_local_archive/General_useful_data/Global_PET_database_ET0_monthly/et0_month/et0_{:02}.tif"
+    out_pattern = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/ET0_monthly/ET0_{}.tif"
+
+    for month in range(1, 13):
+        input_path = input_pattern.format(month)
+        target_path = out_pattern.format(month)
+        pygeoprocessing.mask_raster(
+            (input_path, 1), aoi_path, target_path)
+
+
+def process_precip():
+    """Process precipitation rasters: extract and project.
+
+    Clip global precip rasters to the Chaglla watershed, reproject them to
+    UTM.
+
+    """
+    intermediate_dir = tempfile.mkdtemp()
+    # clip and project to match this aoi
+    aoi_proj_path = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/Chaglla_buffer_aoi_UTM18S.shp"
+    # match resolution of this raster, in projected units
+    dem_proj_path = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/HydroSHEDS_CON_Chaglla_UTM18S.tif"
+    target_srs_wkt = pygeoprocessing.get_vector_info(
+        aoi_proj_path)['projection_wkt']
+    clipping_box = pygeoprocessing.get_vector_info(
+        aoi_proj_path)['bounding_box']
+    model_resolution = pygeoprocessing.get_raster_info(
+        dem_proj_path)['pixel_size'][0]
+    file_suffix = ''
+
+    current_pattern = 'E:/GIS_local_archive/General_useful_data/Worldclim_2.1/wc2.1_5m_prec_{:02d}.tif'
+    future_dir = 'E:/GIS_local_archive/General_useful_data/Worldclim_future_climate/cmip5/MIROC-ESM-CHEM'
+    outer_dir = "F:/Moore_Amazon_backups/precipitation"
+    # do this for a series of precip rasters pertaining to 2 time periods,
+    # three RCP scenarios
+    time_list = ['50', '70']  # year after 2000
+    rcp_list = [2.6, 6.0, 8.5]  # RCP
+    for year in time_list:
+        for rcp in rcp_list:
+            out_dir = os.path.join(
+                outer_dir, 'year_20{}'.format(year), 'rcp_{}'.format(rcp))
+            os.makedirs(out_dir)
+            for m in range(1, 13):
+                print("Processing raster {}, {}, {}".format(year, rcp, m))
+                basename = "mi{}pr{}{}.tif".format(int(rcp * 10), year, m)
+                in_path = os.path.join(
+                    future_dir, "RCP{}".format(rcp), '20{}'.format(year),
+                    basename)
+                proj_path = os.path.join(out_dir, basename)
+                clip_and_project_raster(
+                    in_path, clipping_box, target_srs_wkt, model_resolution,
+                    intermediate_dir, file_suffix, proj_path)
+
+    # clip and project current
+    out_dir = os.path.join(outer_dir, 'current')
+    os.makedirs(out_dir)
+    for m in range(1, 13):
+        in_path = current_pattern.format(m)
+        proj_path = os.path.join(out_dir, 'wc2.1_5m_prec_{}.tif'.format(m))
+        print("Processing raster {}".format(m))
+        clip_and_project_raster(
+            in_path, clipping_box, target_srs_wkt, model_resolution,
+            intermediate_dir, file_suffix, proj_path)
+
+    # clean up clipped, un-projected rasters
+    os.remove(intermediate_dir)
+
+
+def calculate_erosivity():
+    """Calculate erosivity from annual rainfall for Chaglla watershed.
+
+    Calculate average annual rainfall erosivity from annual rainfall,
+    following Riquetti et al. 2020, "Rainfall erosivity in South America:
+    Current patterns and future perspectives". STOTEN
+    erosivity according to the regression equation published by Riquetti et al.
+    Use a single value for latitude and longitude for the watershed, the
+    watershed centroid.
+
+    """
+    def erosivity_op(dem, precip):
+        """Calculate erovisity from elevation and annual precipitation.
+
+        Parameters:
+            dem (numpy.ndarray): elevation in m above sea level
+            precip (numpy.ndarray): average annual precip in mm
+
+        Returns:
+            rainfall erosivity, MJ mm per ha per h per year
+
+        """
+        lon_val = -76.26  # watershed centroid longitude
+        lat_val = -10.17  # watershed centroid latitude
+        # regression coefficients published by Riquetti et al. 2020
+        b0 = 0.27530
+        b1 = 0.02266
+        b2 = -0.00017067
+        b3 = 0.65773
+        b4 = 0.06049663
+        valid_mask = (
+            (~numpy.isclose(dem, dem_nodata)) &
+            (~numpy.isclose(precip, precip_nodata)))
+
+        log_R = (b0 + b1 * lon_val + b2 * (lon_val * lat_val) + b3 *
+            ln(precip[valid_mask]) + b4 * dem[valid_mask] * precip[valid_mask])
+
+    def simple_erosivity_op(precip):
+        """Calculate erosivity as annual precip * 0.5."""
+        valid_mask = (~numpy.isclose(precip, input_nodata))
+        result = numpy.empty(precip.shape, dtype=numpy.float32)
+        result[:] = input_nodata
+        result[valid_mask] = precip[valid_mask] * 0.5
+        return result
+
+    dem_path = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/HydroSHEDS_CON_Chaglla_UTM18S.tif"
+    intermediate_dir = tempfile.mkdtemp()
+    precip_dir = "F:/Moore_Amazon_backups/precipitation"
+    # out_dir = "F:/Moore_Amazon_backups/precipitation/erosivity_Riquetti"
+    out_dir = "F:/Moore_Amazon_backups/precipitation/erosivity_Roose"
+    for year in ['50', '70']:  # year after 2000
+        for rcp in [2.6, 6.0, 8.5]:  # RCP
+            path_list = [os.path.join(
+                precip_dir, 'year_20{}'.format(year), 'rcp_{}'.format(rcp),
+                "mi{}pr{}{}.tif".format(int(rcp * 10), year, m)) for m in
+                range(1, 13)]
+            input_nodata = pygeoprocessing.get_raster_info(
+                path_list[0])['nodata'][0]
+            annual_precip_path = os.path.join(intermediate_dir, 'annual.tif')
+            raster_list_sum(
+                path_list, input_nodata, annual_precip_path, input_nodata)
+            # TODO align with DEM if using Riquetti et al
+            out_path = os.path.join(
+                out_dir, 'erosivity_year{}_rcp{}.tif'.format(year, rcp))
+            pygeoprocessing.raster_calculator(
+                [(annual_precip_path, 1)], simple_erosivity_op, out_path,
+                gdal.GDT_Float32, input_nodata)
+
+    # current
+    current_dir = 'E:/GIS_local_archive/General_useful_data/Worldclim_2.1'
+    path_list = [
+        os.path.join(current_dir, 'wc2.1_5m_prec_{:02d}.tif'.format(m)) for m
+        in range(1, 13)]
+    input_nodata = pygeoprocessing.get_raster_info(
+        path_list[0])['nodata'][0]
+    annual_precip_path = os.path.join(intermediate_dir, 'annual.tif')
+    raster_list_sum(
+        path_list, input_nodata, annual_precip_path, input_nodata)
+    # TODO align with DEM if using Riquetti et al
+    out_path = os.path.join(out_dir, 'erosivity_current.tif')
+    pygeoprocessing.raster_calculator(
+        [(annual_precip_path, 1)], simple_erosivity_op, out_path,
+        gdal.GDT_Float32, input_nodata)
+
 
 if __name__ == "__main__":
     __spec__ = None  # for running with pdb
@@ -717,4 +1050,8 @@ if __name__ == "__main__":
     # process_WDPA_intersect_tables()
     # count_protected_areas()
     # process_WDPA_area_tables()
-    summarize_ssp_landcover(out_dir)
+    # summarize_ssp_landcover(out_dir)
+    # ssp_change_maps(out_dir)
+    # reclassify_soil_group()
+    # process_precip()
+    calculate_erosivity()

@@ -106,7 +106,7 @@ def raster_values_at_points(
     return report_table
 
 
-def average_band_value_in_aoi(raster_path, aoi_path):
+def average_band_value_in_aoi(raster_path, aoi_path, band_list=None):
     """Calculate the average value across bands of a raster inside an aoi.
 
     Args:
@@ -114,14 +114,18 @@ def average_band_value_in_aoi(raster_path, aoi_path):
             months of the year
         aoi_path (string): path to polygon vector defining the aoi. Should have
             a single feature
+        band_list (list of ints): optional, list of bands within the raster
+            that should be included in calculation of the average
 
     Returns:
         average value across pixels within the aoi across bands in
             raster_path
     """
+    if not band_list:
+        band_list = [r for r in range(1, 13)]
     running_sum = 0
     running_count = 0
-    for band in range(1, 13):
+    for band in band_list:
         zonal_stat_dict = pygeoprocessing.zonal_statistics(
             (raster_path, band), aoi_path)
         if len([*zonal_stat_dict]) > 1:
@@ -199,7 +203,7 @@ def raster_band_sum(raster_path, input_nodata, target_path, target_nodata):
 
 
 def summarize_future_climate():
-    """Summarize future climate scenarios for a large part of Mongolia."""
+    """Summarize future climate scenarios for Mongolia."""
     climate_summary_path = "C:/Users/ginge/Dropbox/NatCap_backup/Mongolia/data/climate/Worldclim_current+future_scenario_summary.csv"
     mongolia_shp_path = "E:/GIS_local/Mongolia/boundaries_etc/Mongolia.shp"
     steppe_shp_path = "E:/GIS_local/Mongolia/WCS_Eastern_Steppe_workshop/southeastern_aimags_aoi_WGS84.shp"
@@ -416,7 +420,79 @@ def time_series_at_points():
     sum_df.to_csv(save_as, index=False)
 
 
+def summarize_winter_temps():
+    """Summarize change in winter temperature for Mongolia across GCMs.
+
+    Winter = November, December, January, February
+    (following Nandintsetseg et al 2017: "Contributions of multiple climate
+    hazards and overgrazing to the 2009/2010 winter disaster in Mongolia")
+
+    """
+    summary_dict = {
+        'model': [],
+        'output': [],
+        'aoi': [],
+        'summary_method': [],
+        'mean_value': [],
+    }
+    winter_months = [11, 12, 1, 2]
+    mongolia_shp_path = "E:/GIS_local/Mongolia/boundaries_etc/Mongolia.shp"
+    future_dir = "E:/GIS_local_archive/General_useful_data/Worldclim_future_climate/cmip6"
+    scenario = 'ssp370'
+    resolution = '2.5m'
+    time_period = '2061-2080'
+    raster_path_bn = 'wc2.1_{}_{}_{}_{}_{}.tif'
+    output_list = ['tmin', 'tmax']  # ,'prec'
+    model_list = [
+        f for f in os.listdir(
+            os.path.join(
+                future_dir, 'share', 'spatial03', 'worldclim', 'cmip6',
+                '7_fut', '2.5m'))]
+    for model in model_list:
+        for output in output_list:
+            output_path = os.path.join(
+                future_dir, 'share', 'spatial03', 'worldclim', 'cmip6',
+                '7_fut', resolution, model, scenario, raster_path_bn.format(
+                    resolution, output, model, scenario, time_period))
+            print("calc average value in Mongolia: {}".format(
+                os.path.basename(output_path)))
+            mean_val = average_band_value_in_aoi(
+                output_path, mongolia_shp_path, band_list=winter_months)
+            summary_dict['model'].append(model)
+            summary_dict['output'].append(output)
+            summary_dict['aoi'].append('Mongolia')
+            summary_dict['summary_method'].append(
+                'Monthly average across pixels')
+            summary_dict['mean_value'].append(mean_val)
+
+    current_dir = "E:/GIS_local_archive/General_useful_data/Worldclim_2.0"
+    tmin_pattern = os.path.join(
+        current_dir, 'temperature_min', 'wc2.0_30s_tmin_{}.tif')
+    tmin_path_list = [tmin_pattern.format(m) for m in winter_months]
+    mean_val = average_raster_value_in_aoi(tmin_path_list, mongolia_shp_path)
+    summary_dict['model'].append('current')
+    summary_dict['output'].append('tmin')
+    summary_dict['aoi'].append('Mongolia')
+    summary_dict['summary_method'].append('Monthly average across pixels')
+    summary_dict['mean_value'].append(mean_val)
+
+    tmax_pattern = os.path.join(
+        current_dir, 'temperature_max', 'wc2.0_30s_tmax_{}.tif')
+    tmax_path_list = [tmax_pattern.format(m) for m in winter_months]
+    mean_val = average_raster_value_in_aoi(tmax_path_list, mongolia_shp_path)
+    summary_dict['model'].append('current')
+    summary_dict['output'].append('tmax')
+    summary_dict['aoi'].append('Mongolia')
+    summary_dict['summary_method'].append('Monthly average across pixels')
+    summary_dict['mean_value'].append(mean_val)
+
+    summary_df = pandas.DataFrame(summary_dict)
+    winter_summary_path = "C:/Users/ginge/Dropbox/NatCap_backup/Mongolia/data/climate/Worldclim_current+future_winter_temp_summary.csv"
+    summary_df.to_csv(winter_summary_path, index=False)
+
+
 if __name__ == "__main__":
-    summarize_future_climate()
+    # summarize_future_climate()
     # add_current_climate()
     # time_series_at_points()
+    summarize_winter_temps()
