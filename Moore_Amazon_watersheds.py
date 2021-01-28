@@ -1115,6 +1115,180 @@ def process_seals_lulc():
     os.remove(intermediate_dir)
 
 
+def calculate_monthly_ET0():
+    """Calculate monthly reference evapotranspiration."""
+    def calc_ET0(RA, tmin, tmax, P):
+        """Modified Hargreaves from Droogers and Allen 2002.
+
+        IT IS ASSUMED HERE THAT TEMPERATURE RASTERS ARE IN UNITS OF DEGREES C
+        TIMES 10! THIS IS TRUE FOR WORLDCLIM FUTURE CMIP5 RASTERS.
+
+        Parameters:
+            RA (float): extraterrestrial radiation for this month
+            tmin (numpy.ndarray): minimum temperature for the month
+                IN DEGREES * 10
+            tmax (numpy.ndarray): maximum temperature for the month
+                IN DEGREES * 10
+            P (numpy.ndarray): monthly precipitation, mm
+
+        Returns:
+            monthly reference evapotranspiration (mm)
+
+        """
+        valid_mask = (
+            (~numpy.isclose(tmin, tmin_nodata)) &
+            (~numpy.isclose(tmax, tmax_nodata)) &
+            (~numpy.isclose(P, precip_nodata)))
+        tavg = numpy.empty(tmin.shape, dtype=numpy.float32)
+        tavg[:] = precip_nodata
+        tavg[valid_mask] = ((tmin[valid_mask] + tmax[valid_mask] / 2.) / 10.)
+
+        tdiff = numpy.empty(tmin.shape, dtype=numpy.float32)
+        tdiff[:] = precip_nodata
+        tdiff[valid_mask] = ((tmax[valid_mask] - tmin[valid_mask]) / 10.)
+
+        result = numpy.empty(tmin.shape, dtype=numpy.float32)
+        result[:] = precip_nodata
+        result[valid_mask] = (
+            0.0013 * 0.408 * RA * (tavg[valid_mask] + 17.) *
+            (numpy.power((tdiff[valid_mask] - 0.0123 * P[valid_mask]), 0.76)) *
+            29.5)
+        return result
+
+    # monthly extraterrestrial radiation for 10 deg S latitude
+    # from table 2.6, FAO guidance
+    radiation_dict = {
+        1: 39.5,
+        2: 39.3,
+        3: 37.8,
+        4: 34.6,
+        5: 31.1,
+        6: 29.1,
+        7: 29.8,
+        8: 32.8,
+        9: 36.3,
+        10: 38.5,
+        11: 39.3,
+        12: 39.4,
+    }
+
+    intermediate_dir = tempfile.mkdtemp()
+    outer_ET_dir = "F:/Moore_Amazon_backups/ET0"
+
+    # current
+    current_precip_dir = "E:/GIS_local_archive/General_useful_data/Worldclim_2.1"
+    current_tmin_dir =  "E:/GIS_local_archive/General_useful_data/Worldclim_2.1/tmin"
+    current_tmax_dir = "E:/GIS_local_archive/General_useful_data/Worldclim_2.1/tmax"
+    precip_eg = os.path.join(current_precip_dir, 'wc2.1_5m_prec_01.tif')
+    tmin_eg = os.path.join(current_tmin_dir, '*.tif')  # TODO
+    tmax_eg = os.path.join(current_tmax_dir, '*.tif')  # TODO
+    tmin_nodata = pygeoprocessing.get_raster_info(tmin_eg)['nodata'][0]
+    tmax_nodata = pygeoprocessing.get_raster_info(tmax_eg)['nodata'][0]
+
+    target_info = pygeoprocessing.get_raster_info(precip_eg)
+    precip_nodata = target_info['nodata'][0]
+    clipping_box = target_info['bounding_box']
+    target_srs_wkt = target_info['projection_wkt']
+    model_resolution = target_info['pixel_size'][0]
+    for m in range(1, 13):
+        out_path = os.path.join(
+            outer_ET_dir, 'current', 'ET0_{}.tif'.format(m))
+        if not os.path.isfile(out_path):
+            raw_tmin_path = os.path.join(current_tmin_dir, 'tmin.tif')  # TODO check filename
+            tmin_path = os.path.join(intermediate_dir, 'tmin_proj.tif')
+            clip_and_project_raster(
+                raw_tmin_path, clipping_box, target_srs_wkt,
+                model_resolution, intermediate_dir, '', tmin_path)
+
+            raw_tmax_path = os.path.join(current_tmax_dir, 'tmax.tif')  # TODO
+            tmax_path = os.path.join(intermediate_dir, 'tmax_proj.tif')
+            clip_and_project_raster(
+                raw_tmax_path, clipping_box, target_srs_wkt,
+                model_resolution, intermediate_dir, '', tmax_path)
+
+            precip_path = os.path.join(
+                current_precip_dir, 'wc2.1_5m_prec_{:02}.tif'.format(m))
+            # align tmin, tmax, precip
+            base_raster_path_list = [tmin_path, tmax_path, precip_path]
+            aligned_raster_path_list = [
+                os.path.join(intermediate_dir, 'aligned_tmin.tif'),
+                os.path.join(intermediate_dir, 'aligned_tmax.tif'),
+                os.path.join(intermediate_dir, 'aligned_precip.tif')]
+            pygeoprocessing.align_and_resize_raster_stack(
+                base_raster_path_list, aligned_raster_path_list,
+                ['near'] * len(base_raster_path_list),
+                target_info['pixel_size'], 'intersection')
+
+            radiation = radiation_dict[m]
+            pygeoprocessing.raster_calculator(
+                [(radiation, 'raw')] + [
+                    (path, 1) for path in aligned_raster_path_list],
+                calc_ET0, out_path, gdal.GDT_Float32, precip_nodata)
+
+    # future
+    precip_dir = "F:/Moore_Amazon_backups/precipitation"
+    future_dir = 'E:/GIS_local_archive/General_useful_data/Worldclim_future_climate/cmip5/MIROC-ESM-CHEM'
+    precip_eg = os.path.join(
+        precip_dir, 'year_2050', 'rcp_2.6', "mi26pr501.tif")
+    tmin_eg = "E:/GIS_local_archive/General_useful_data/Worldclim_future_climate/cmip5/MIROC-ESM-CHEM/RCP2.6/2050/tmin/mi26tn505.tif"
+    tmax_eg = "E:/GIS_local_archive/General_useful_data/Worldclim_future_climate/cmip5/MIROC-ESM-CHEM/RCP2.6/2050/tmax/mi26tx505.tif"
+    tmin_nodata = pygeoprocessing.get_raster_info(tmin_eg)['nodata'][0]
+    tmax_nodata = pygeoprocessing.get_raster_info(tmax_eg)['nodata'][0]
+
+    target_info = pygeoprocessing.get_raster_info(precip_eg)
+    precip_nodata = target_info['nodata'][0]
+    clipping_box = target_info['bounding_box']
+    target_srs_wkt = target_info['projection_wkt']
+    model_resolution = target_info['pixel_size'][0]
+    for year in ['50']:  # , '70']:  # year after 2000
+        for rcp in [2.6]:  # , 6.0, 8.5]:  # RCP  TODO
+            for m in range(1, 13):
+                out_path = os.path.join(
+                    outer_ET_dir, 'year_20{}'.format(year),
+                    'rcp_{}'.format(rcp), 'ET0_{}.tif'.format(m))
+                if not os.path.isfile(out_path):
+                    # project and clip tmin and tmax to match precip
+                    raw_tmin_path = os.path.join(
+                        future_dir, "RCP{}".format(rcp), '20{}'.format(year),
+                        'tmin', "mi{}tn{}{}.tif".format(
+                            int(rcp * 10), year, m))
+                    tmin_path = os.path.join(intermediate_dir, 'tmin_proj.tif')
+                    print("Processing raster {}".format(tmin_path))
+                    clip_and_project_raster(
+                        raw_tmin_path, clipping_box, target_srs_wkt,
+                        model_resolution, intermediate_dir, '', tmin_path)
+
+                    raw_tmax_path = os.path.join(
+                        future_dir, "RCP{}".format(rcp), '20{}'.format(year),
+                        'tmax', "mi{}tx{}{}.tif".format(
+                            int(rcp * 10), year, m))
+                    tmax_path = os.path.join(intermediate_dir, 'tmax_proj.tif')
+                    clip_and_project_raster(
+                        raw_tmax_path, clipping_box, target_srs_wkt,
+                        model_resolution, intermediate_dir, '', tmax_path)
+                    precip_path = os.path.join(
+                        precip_dir, 'year_20{}'.format(year),
+                        'rcp_{}'.format(rcp),
+                        "mi{}pr{}{}.tif".format(int(rcp * 10), year, m))
+
+                    # align tmin, tmax, precip
+                    base_raster_path_list = [tmin_path, tmax_path, precip_path]
+                    aligned_raster_path_list = [
+                        os.path.join(intermediate_dir, 'aligned_tmin.tif'),
+                        os.path.join(intermediate_dir, 'aligned_tmax.tif'),
+                        os.path.join(intermediate_dir, 'aligned_precip.tif')]
+                    pygeoprocessing.align_and_resize_raster_stack(
+                        base_raster_path_list, aligned_raster_path_list,
+                        ['near'] * len(base_raster_path_list),
+                        target_info['pixel_size'], 'intersection')
+
+                    radiation = radiation_dict[m]
+                    pygeoprocessing.raster_calculator(
+                        [(radiation, 'raw')] + [
+                            (path, 1) for path in aligned_raster_path_list],
+                        calc_ET0, out_path, gdal.GDT_Float32, precip_nodata)
+
+
 if __name__ == "__main__":
     __spec__ = None  # for running with pdb
     out_dir = "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use"
@@ -1132,5 +1306,6 @@ if __name__ == "__main__":
     # ssp_change_maps(out_dir)
     # reclassify_soil_group()
     # process_precip()
-    calculate_erosivity()
+    # calculate_erosivity()
     # process_seals_lulc()
+    calculate_monthly_ET0()
