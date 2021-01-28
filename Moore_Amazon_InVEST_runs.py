@@ -7,6 +7,10 @@ import os
 import logging
 import sys
 
+import pandas
+from osgeo import ogr
+from osgeo import osr
+
 import natcap.invest.sdr.sdr
 import natcap.invest.utils
 
@@ -30,41 +34,89 @@ args = {
     'sdr_max': '0.8',
     'threshold_flow_accumulation': '1000',
     'watersheds_path': 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/Chaglla_dam_watershed.shp',
+    'biophysical_table_path': 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/biophysical_table_Chaglla_SEALS_simplified.csv',
 }
 
+
+def sdr_outputs_to_dict(watershed_results_path):
+    """Read sdr results from watershed results and return as a dict."""
+    sdr_dict = {
+        'WS_ID': [],
+        'usle_tot': [],
+        'sed_export': [],
+        'sed_retent': [],
+        'sed_dep': [],
+    }
+    ws_vector = ogr.Open(watershed_results_path)
+    ws_layer = ws_vector.GetLayer()
+    for ws_feature in ws_layer:
+        for field_name in sdr_dict:
+            sdr_dict[field_name].append(ws_feature.GetField(field_name))
+
+    ws_layer = None
+    ws_layer = None
+    return sdr_dict
+
+
 if __name__ == '__main__':
-    outer_dir = 'C:/Users/ginge/Documents/NatCap/GIS_local/Moore_Amazon'
-    result_dir = os.path.join(outer_dir, 'SDR_workspace')
+    # outer_dir = 'C:/Users/ginge/Documents/NatCap/GIS_local/Moore_Amazon'
+    # result_dir = os.path.join(outer_dir, 'SDR_workspace')
+    result_dir = 'C:/SDR_workspace'
+    lulc_pattern = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/SEALS_lulc/lulc_RCP{}_year{}.tif"
+    erosivity_pattern = "F:/Moore_Amazon_backups/precipitation/erosivity_Riquetti/erosivity_year{}_rcp{}.tif"
 
-    # contrast ESA with SEALS current lulc and Panagos vs Roose erosivity
-    # ESA landcover, Panagos erosivity
-    args['workspace_dir'] = os.path.join(
-        result_dir, 'ESA2015_landcover', 'Panagos_erosivity')
-    args['lulc_path'] = 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/ESACCI-LC-L4-LCCS-Map-300m-P1Y-2015-v2-0-7.tif'
-    args['biophysical_table_path'] = 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/biophysical_table_Chaglla_ESA_2015.csv'
-    args['erosivity_path'] = 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/erosivity_Panagos_etal_Chaglla_aoi_UTM.tif'
-    natcap.invest.sdr.sdr.execute(args)
+    df_list = []
 
-    # ESA landcover, Roose erosivity
-    args['workspace_dir'] = os.path.join(
-        result_dir, 'ESA2015_landcover', 'Roose_erosivity')
-    args['lulc_path'] = 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/ESACCI-LC-L4-LCCS-Map-300m-P1Y-2015-v2-0-7.tif'
-    args['biophysical_table_path'] = 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/biophysical_table_Chaglla_ESA_2015.csv'
-    args['erosivity_path'] = 'F:/Moore_Amazon_backups/precipitation/erosivity_Roose/erosivity_current.tif'
-    natcap.invest.sdr.sdr.execute(args)
+    # SEALS landcover, "Riquetti" erosivity
+    args['workspace_dir'] = os.path.join(result_dir, 'current')
+    args['lulc_path'] = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/SEALS_lulc/lulc_current.tif"
+    args['erosivity_path'] = 'F:/Moore_Amazon_backups/precipitation/erosivity_Riquetti/erosivity_current.tif'
+    # natcap.invest.sdr.sdr.execute(args)
 
-    # SEALS landcover, Panagos erosivity
-    args['workspace_dir'] = os.path.join(
-        result_dir, 'SEALS2015_landcover', 'Panagos_erosivity')
-    args['lulc_path'] = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/lulc_esa_2015_reclassified_to_seals_simplified.tif"
-    args['biophysical_table_path'] = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/biophysical_table_Chaglla_SEALS_simplified.csv"
-    args['erosivity_path'] = 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/erosivity_Panagos_etal_Chaglla_aoi_UTM.tif'
-    natcap.invest.sdr.sdr.execute(args)
+    sdr_dict = sdr_outputs_to_dict(
+        os.path.join(args['workspace_dir'], 'watershed_results_sdr.shp'))
+    sdr_dict['year'] = ['2015' * len(sdr_dict['WS_ID'])]
+    sdr_dict['scenario'] = ['current' * len(sdr_dict['WS_ID'])]
+    sdr_dict['erosivity'] = ['Riquetti_current' * len(sdr_dict['WS_ID'])]
+    sdr_df = pandas.DataFrame(sdr_dict)
+    df_list.append(sdr_df)
 
-    # SEALS landcover, Roose erosivity
-    args['workspace_dir'] = os.path.join(
-        result_dir, 'SEALS2015_landcover', 'Roose_erosivity')
-    args['lulc_path'] = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/lulc_esa_2015_reclassified_to_seals_simplified.tif"
-    args['biophysical_table_path'] = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/biophysical_table_Chaglla_SEALS_simplified.csv"
-    args['erosivity_path'] = 'F:/Moore_Amazon_backups/precipitation/erosivity_Roose/erosivity_current.tif'
-    natcap.invest.sdr.sdr.execute(args)
+    for year in ['2050', '2070']:
+        for rcp in ['2.6', '6.0', '8.5']:
+            # lulc only reflecting future conditions
+            args['workspace_dir'] = os.path.join(
+                result_dir, 'year_{}'.format(year), 'rcp_{}'.format(rcp),
+                'current_erosivity')
+            args['lulc_path'] = lulc_pattern.format(rcp, year)
+            natcap.invest.sdr.sdr.execute(args)
+
+            sdr_dict = sdr_outputs_to_dict(
+                os.path.join(args['workspace_dir'],
+                'watershed_results_sdr.shp'))
+            sdr_dict['year'] = [year * len(sdr_dict['WS_ID'])]
+            sdr_dict['scenario'] = [rcp * len(sdr_dict['WS_ID'])]
+            sdr_dict['erosivity'] = [
+                'current' * len(sdr_dict['WS_ID'])]
+            sdr_df = pandas.DataFrame(sdr_dict)
+            df_list.append(sdr_df)
+
+            # lulc and erosivity reflecting future conditions
+            args['workspace_dir'] = os.path.join(
+                result_dir, 'year_{}'.format(year), 'rcp_{}'.format(rcp))
+            args['erosivity_path'] = erosivity_pattern.format(year[2:], rcp)
+            # natcap.invest.sdr.sdr.execute(args)
+
+            sdr_dict = sdr_outputs_to_dict(
+                os.path.join(args['workspace_dir'],
+                'watershed_results_sdr.shp'))
+            sdr_dict['year'] = [year * len(sdr_dict['WS_ID'])]
+            sdr_dict['scenario'] = [rcp * len(sdr_dict['WS_ID'])]
+            sdr_dict['erosivity'] = [
+                'Riquetti_future_precip' * len(sdr_dict['WS_ID'])]
+            sdr_df = pandas.DataFrame(sdr_dict)
+            df_list.append(sdr_df)
+
+    summary_df = pandas.concat(df_list)
+    summary_df.to_csv(
+        os.path.join(result_dir, 'watershed_results_summary.csv'), index=False)
+

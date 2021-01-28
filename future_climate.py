@@ -202,6 +202,63 @@ def raster_band_sum(raster_path, input_nodata, target_path, target_nodata):
         target_nodata)
 
 
+def raster_list_sum(
+        raster_list, input_nodata, target_path, target_nodata,
+        nodata_remove=False):
+    """Calculate the sum per pixel across rasters in a list.
+
+    Sum the rasters in `raster_list` element-wise, allowing nodata values
+    in the rasters to propagate to the result or treating nodata as zero. If
+    nodata is treated as zero, areas where all inputs are nodata will be nodata
+    in the output.
+
+    Args:
+        raster_list (list): list of paths to rasters to sum
+        input_nodata (float or int): nodata value in the input rasters
+        target_path (string): path to location to store the result
+        target_nodata (float or int): nodata value for the result raster
+        nodata_remove (bool): if true, treat nodata values in input
+            rasters as zero. If false, the sum in a pixel where any input
+            raster is nodata is nodata.
+
+    Side effects:
+        modifies or creates the raster indicated by `target_path`
+
+    Returns:
+        None
+
+    """
+    def raster_sum_op(*raster_list):
+        """Add the rasters in raster_list without removing nodata values."""
+        invalid_mask = numpy.any(
+            numpy.isclose(numpy.array(raster_list), input_nodata), axis=0)
+        for r in raster_list:
+            numpy.place(r, numpy.isclose(r, input_nodata), [0])
+        sum_of_rasters = numpy.sum(raster_list, axis=0)
+        sum_of_rasters[invalid_mask] = target_nodata
+        return sum_of_rasters
+
+    def raster_sum_op_nodata_remove(*raster_list):
+        """Add the rasters in raster_list, treating nodata as zero."""
+        invalid_mask = numpy.all(
+            numpy.isclose(numpy.array(raster_list), input_nodata), axis=0)
+        for r in raster_list:
+            numpy.place(r, numpy.isclose(r, input_nodata), [0])
+        sum_of_rasters = numpy.sum(raster_list, axis=0)
+        sum_of_rasters[invalid_mask] = target_nodata
+        return sum_of_rasters
+
+    if nodata_remove:
+        pygeoprocessing.raster_calculator(
+            [(path, 1) for path in raster_list], raster_sum_op_nodata_remove,
+            target_path, gdal.GDT_Float32, target_nodata)
+
+    else:
+        pygeoprocessing.raster_calculator(
+            [(path, 1) for path in raster_list], raster_sum_op,
+            target_path, gdal.GDT_Float32, target_nodata)
+
+
 def summarize_future_climate():
     """Summarize future climate scenarios for Mongolia."""
     climate_summary_path = "C:/Users/ginge/Dropbox/NatCap_backup/Mongolia/data/climate/Worldclim_current+future_scenario_summary.csv"
@@ -491,8 +548,83 @@ def summarize_winter_temps():
     summary_df.to_csv(winter_summary_path, index=False)
 
 
+def precip_temp_Julian_sites():
+    """Summarize annual temperature and precip at Julian Ahlborn's sites."""
+    point_shp_path = "C:/Users/ginge/Dropbox/NatCap_backup/Mongolia/data/Julian_Ahlborn/sampling_sites_shapefile/site_centroids.shp"
+    precip_path = "E:/GIS_local_archive/General_useful_data/Worldclim_2.0/annual_precip.tif"
+    precip_df = raster_values_at_points(
+        point_shp_path, 'site', precip_path, 1, 'annual_precip')
+
+    min_temp_pattern = "E:/GIS_local_archive/General_useful_data/Worldclim_2.0/temperature_min/wc2.0_30s_tmin_{}.tif"
+    max_temp_pattern = "E:/GIS_local_archive/General_useful_data/Worldclim_2.0/temperature_max/wc2.0_30s_tmax_{}.tif"
+    temperature_path_list = (
+        [min_temp_pattern.format(m) for m in range(1, 13)] +
+        [max_temp_pattern.format(m) for m in range(1, 13)])
+
+    temp_list = []
+    for m in range(len(temperature_path_list)):
+        temp_df = raster_values_at_points(
+            point_shp_path, 'site', temperature_path_list[m], 1, 'temperature')
+        temp_df['month_idx'] = m
+        temp_list.append(temp_df)
+    temp_df = pandas.concat(temp_list)
+    mean_temp = temp_df.groupby('site')['temperature'].mean()
+
+    precip_df = precip_df.merge(mean_temp, on='site', suffixes=(False, False))
+    precip_df.to_csv(
+        "C:/Users/ginge/Dropbox/NatCap_backup/Mongolia/model_results/Ahlborn_scenarios/summary_figs/precip_temp_summary.csv",
+        index=False)
+
+
+def average_temperature():
+    """Calculate average temperature for each pixel and summarize."""
+    def raster_mean_op(*raster_list):
+        """Calculate the mean value pixel-wise from rasters in raster_list."""
+        valid_mask = numpy.any(
+            ~numpy.isclose(numpy.array(raster_list), current_nodata), axis=0)
+        # get number of valid observations per pixel
+        num_observations = numpy.count_nonzero(
+            ~numpy.isclose(numpy.array(raster_list), current_nodata), axis=0)
+        for r in raster_list:
+            numpy.place(r, numpy.isclose(r, current_nodata), [0])
+        sum_of_rasters = numpy.sum(raster_list, axis=0)
+
+        divide_mask = (
+            (num_observations > 0) &
+            valid_mask)
+
+        mean_of_rasters = numpy.empty(
+            sum_of_rasters.shape, dtype=numpy.float32)
+        mean_of_rasters[:] = current_nodata
+        mean_of_rasters[valid_mask] = 0
+        mean_of_rasters[divide_mask] = numpy.divide(
+            sum_of_rasters[divide_mask], num_observations[divide_mask])
+        return mean_of_rasters
+
+
+    min_temp_pattern = "E:/GIS_local_archive/General_useful_data/Worldclim_2.0/temperature_min/wc2.0_30s_tmin_{}.tif"
+    max_temp_pattern = "E:/GIS_local_archive/General_useful_data/Worldclim_2.0/temperature_max/wc2.0_30s_tmax_{}.tif"
+    temperature_path_list = (
+        [min_temp_pattern.format(m) for m in range(1, 13)] +
+        [max_temp_pattern.format(m) for m in range(1, 13)])
+    current_nodata = pygeoprocessing.get_raster_info(
+        temperature_path_list[0])['nodata'][0]
+
+    average_temp_path = "E:/GIS_local_archive/General_useful_data/Worldclim_2.0/average_temperature.tif"
+    pygeoprocessing.raster_calculator(
+        [(path, 1) for path in temperature_path_list], raster_mean_op,
+        average_temp_path, gdal.GDT_Float32, current_nodata)
+
+    steppe_shp_path = "E:/GIS_local/Mongolia/WCS_Eastern_Steppe_workshop/southeastern_aimags_aoi_WGS84.shp"
+    zonal_stat_dict = pygeoprocessing.zonal_statistics(
+        (average_temp_path, 1), steppe_shp_path)
+    import pdb; pdb.set_trace()
+    print("zonal stats!")
+
+
 if __name__ == "__main__":
     # summarize_future_climate()
     # add_current_climate()
     # time_series_at_points()
-    summarize_winter_temps()
+    # summarize_winter_temps()
+    average_temperature()

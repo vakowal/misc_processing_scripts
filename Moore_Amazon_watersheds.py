@@ -981,27 +981,38 @@ def calculate_erosivity():
         b1 = 0.02266
         b2 = -0.00017067
         b3 = 0.65773
-        b4 = 0.06049663
+        b4 = 6.0497e-08
         valid_mask = (
             (~numpy.isclose(dem, dem_nodata)) &
-            (~numpy.isclose(precip, precip_nodata)))
+            (~numpy.isclose(precip, input_nodata)))
 
-        log_R = (b0 + b1 * lon_val + b2 * (lon_val * lat_val) + b3 *
-            ln(precip[valid_mask]) + b4 * dem[valid_mask] * precip[valid_mask])
+        log_R = numpy.empty(dem.shape, dtype=numpy.float32)
+        log_R[:] = input_nodata
+        log_R[valid_mask] = (
+            b0 + b1 * lon_val + b2 * (lon_val * lat_val) + b3 *
+            numpy.log(precip[valid_mask]) + b4 * dem[valid_mask] *
+            precip[valid_mask])
+
+        erosivity = numpy.empty(dem.shape, dtype=numpy.float32)
+        erosivity[:] = input_nodata
+        erosivity[valid_mask] = 10**log_R[valid_mask]
+        return erosivity
 
     def simple_erosivity_op(precip):
-        """Calculate erosivity as annual precip * 0.5."""
+        """Calculate erosivity as annual precip * 2.2."""
         valid_mask = (~numpy.isclose(precip, input_nodata))
         result = numpy.empty(precip.shape, dtype=numpy.float32)
         result[:] = input_nodata
-        result[valid_mask] = precip[valid_mask] * 0.5
+        result[valid_mask] = precip[valid_mask] * 2.2
         return result
 
     dem_path = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/HydroSHEDS_CON_Chaglla_UTM18S.tif"
+    target_pixel_size = pygeoprocessing.get_raster_info(dem_path)['pixel_size']
+    dem_nodata = pygeoprocessing.get_raster_info(dem_path)['nodata'][0]
     intermediate_dir = tempfile.mkdtemp()
     precip_dir = "F:/Moore_Amazon_backups/precipitation"
-    # out_dir = "F:/Moore_Amazon_backups/precipitation/erosivity_Riquetti"
-    out_dir = "F:/Moore_Amazon_backups/precipitation/erosivity_Roose"
+    out_dir = "F:/Moore_Amazon_backups/precipitation/erosivity_Riquetti"
+    # out_dir = "F:/Moore_Amazon_backups/precipitation/erosivity_simple"
     for year in ['50', '70']:  # year after 2000
         for rcp in [2.6, 6.0, 8.5]:  # RCP
             path_list = [os.path.join(
@@ -1013,28 +1024,95 @@ def calculate_erosivity():
             annual_precip_path = os.path.join(intermediate_dir, 'annual.tif')
             raster_list_sum(
                 path_list, input_nodata, annual_precip_path, input_nodata)
-            # TODO align with DEM if using Riquetti et al
+
+            # align annual precipitation with DEM
+            aligned_annual_precip_path = os.path.join(
+                intermediate_dir, 'aligned_annual_precip.tif')
+            aligned_dem_path = os.path.join(
+                intermediate_dir, 'aligned_dem.tif')
+            target_raster_path_list = [
+                aligned_annual_precip_path, aligned_dem_path]
+            pygeoprocessing.align_and_resize_raster_stack(
+                [annual_precip_path, dem_path], target_raster_path_list,
+                ['near'] * len(target_raster_path_list), target_pixel_size,
+                'intersection')
+
             out_path = os.path.join(
                 out_dir, 'erosivity_year{}_rcp{}.tif'.format(year, rcp))
             pygeoprocessing.raster_calculator(
-                [(annual_precip_path, 1)], simple_erosivity_op, out_path,
-                gdal.GDT_Float32, input_nodata)
+                [(aligned_dem_path, 1), (aligned_annual_precip_path, 1)],
+                erosivity_op, out_path, gdal.GDT_Float32, input_nodata)
 
     # current
-    current_dir = 'E:/GIS_local_archive/General_useful_data/Worldclim_2.1'
-    path_list = [
-        os.path.join(current_dir, 'wc2.1_5m_prec_{:02d}.tif'.format(m)) for m
-        in range(1, 13)]
+    # current_dir = "F:/Moore_Amazon_backups/precipitation/current"
+    # path_list = [
+    #     os.path.join(current_dir, 'wc2.1_5m_prec_{}.tif'.format(m)) for m
+    #     in range(1, 13)]
+    # input_nodata = pygeoprocessing.get_raster_info(
+    #     path_list[0])['nodata'][0]
+    # annual_precip_path = os.path.join(intermediate_dir, 'annual.tif')
+    # raster_list_sum(
+    #     path_list, input_nodata, annual_precip_path, input_nodata)
+
+    # # align annual precipitation with DEM
+    # aligned_annual_precip_path = os.path.join(
+    #     intermediate_dir, 'aligned_annual_precip.tif')
+    # aligned_dem_path = os.path.join(
+    #     intermediate_dir, 'aligned_dem.tif')
+    # target_raster_path_list = [
+    #     aligned_annual_precip_path, aligned_dem_path]
+    # pygeoprocessing.align_and_resize_raster_stack(
+    #     [annual_precip_path, dem_path], target_raster_path_list,
+    #     ['near'] * len(target_raster_path_list), target_pixel_size,
+    #     'intersection')
+
+    # out_path = os.path.join(out_dir, 'erosivity_current.tif')
+    # pygeoprocessing.raster_calculator(
+    #     [(aligned_dem_path, 1), (aligned_annual_precip_path, 1)],
+    #     erosivity_op, out_path, gdal.GDT_Float32, input_nodata)
+
+
+def process_seals_lulc():
+    """Clip and project SEALS land use rasters."""
+    intermediate_dir = tempfile.mkdtemp(dir=os.getcwd())
+    # clip and project to match this aoi
+    aoi_proj_path = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/Chaglla_buffer_aoi_UTM18S.shp"
+    # match resolution of this raster, in projected units
+    dem_proj_path = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/HydroSHEDS_CON_Chaglla_UTM18S.tif"
+    target_srs_wkt = pygeoprocessing.get_vector_info(
+        aoi_proj_path)['projection_wkt']
+    clipping_box = pygeoprocessing.get_vector_info(
+        aoi_proj_path)['bounding_box']
+    model_resolution = pygeoprocessing.get_raster_info(
+        dem_proj_path)['pixel_size'][0]
+    file_suffix = ''
+    in_pattern = "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_RCP{}_{}.tif"
+    out_pattern = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/SEALS_lulc/lulc_RCP{}_year{}.tif"
+    rcp_scen_dict = {
+        '2.6': '2.6_SSP1',
+        '6.0': '6.0_SSP4',
+        '8.5': '8.5_SSP5',
+    }
+    for year in [2050, 2070]:
+        for rcp in ['2.6', '6.0', '8.5']:
+            rcp_scen = rcp_scen_dict[rcp]
+            in_path = in_pattern.format(rcp_scen, year)
+            input_nodata = pygeoprocessing.get_raster_info(
+                in_path)['nodata'][0]
+            proj_path = out_pattern.format(rcp, year)
+            clip_and_project_raster(
+                in_path, clipping_box, target_srs_wkt, model_resolution,
+                intermediate_dir, file_suffix, proj_path)
+    # current
+    in_path = "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_esa_2015_reclassified_to_seals_simplified.tif"
     input_nodata = pygeoprocessing.get_raster_info(
-        path_list[0])['nodata'][0]
-    annual_precip_path = os.path.join(intermediate_dir, 'annual.tif')
-    raster_list_sum(
-        path_list, input_nodata, annual_precip_path, input_nodata)
-    # TODO align with DEM if using Riquetti et al
-    out_path = os.path.join(out_dir, 'erosivity_current.tif')
-    pygeoprocessing.raster_calculator(
-        [(annual_precip_path, 1)], simple_erosivity_op, out_path,
-        gdal.GDT_Float32, input_nodata)
+        in_path)['nodata'][0]
+    proj_path = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/SEALS_lulc/lulc_current.tif"
+    clip_and_project_raster(
+        in_path, clipping_box, target_srs_wkt, model_resolution,
+        intermediate_dir, file_suffix, proj_path)
+
+    os.remove(intermediate_dir)
 
 
 if __name__ == "__main__":
@@ -1055,3 +1133,4 @@ if __name__ == "__main__":
     # reclassify_soil_group()
     # process_precip()
     calculate_erosivity()
+    # process_seals_lulc()
