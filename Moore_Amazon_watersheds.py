@@ -1044,32 +1044,32 @@ def calculate_erosivity():
                 erosivity_op, out_path, gdal.GDT_Float32, input_nodata)
 
     # current
-    # current_dir = "F:/Moore_Amazon_backups/precipitation/current"
-    # path_list = [
-    #     os.path.join(current_dir, 'wc2.1_5m_prec_{}.tif'.format(m)) for m
-    #     in range(1, 13)]
-    # input_nodata = pygeoprocessing.get_raster_info(
-    #     path_list[0])['nodata'][0]
-    # annual_precip_path = os.path.join(intermediate_dir, 'annual.tif')
-    # raster_list_sum(
-    #     path_list, input_nodata, annual_precip_path, input_nodata)
+    current_dir = "F:/Moore_Amazon_backups/precipitation/current"
+    path_list = [
+        os.path.join(current_dir, 'wc2.1_5m_prec_{}.tif'.format(m)) for m
+        in range(1, 13)]
+    input_nodata = pygeoprocessing.get_raster_info(
+        path_list[0])['nodata'][0]
+    annual_precip_path = os.path.join(intermediate_dir, 'annual.tif')
+    raster_list_sum(
+        path_list, input_nodata, annual_precip_path, input_nodata)
 
-    # # align annual precipitation with DEM
-    # aligned_annual_precip_path = os.path.join(
-    #     intermediate_dir, 'aligned_annual_precip.tif')
-    # aligned_dem_path = os.path.join(
-    #     intermediate_dir, 'aligned_dem.tif')
-    # target_raster_path_list = [
-    #     aligned_annual_precip_path, aligned_dem_path]
-    # pygeoprocessing.align_and_resize_raster_stack(
-    #     [annual_precip_path, dem_path], target_raster_path_list,
-    #     ['near'] * len(target_raster_path_list), target_pixel_size,
-    #     'intersection')
+    # align annual precipitation with DEM
+    aligned_annual_precip_path = os.path.join(
+        intermediate_dir, 'aligned_annual_precip.tif')
+    aligned_dem_path = os.path.join(
+        intermediate_dir, 'aligned_dem.tif')
+    target_raster_path_list = [
+        aligned_annual_precip_path, aligned_dem_path]
+    pygeoprocessing.align_and_resize_raster_stack(
+        [annual_precip_path, dem_path], target_raster_path_list,
+        ['near'] * len(target_raster_path_list), target_pixel_size,
+        'intersection')
 
-    # out_path = os.path.join(out_dir, 'erosivity_current.tif')
-    # pygeoprocessing.raster_calculator(
-    #     [(aligned_dem_path, 1), (aligned_annual_precip_path, 1)],
-    #     erosivity_op, out_path, gdal.GDT_Float32, input_nodata)
+    out_path = os.path.join(out_dir, 'erosivity_current.tif')
+    pygeoprocessing.raster_calculator(
+        [(aligned_dem_path, 1), (aligned_annual_precip_path, 1)],
+        erosivity_op, out_path, gdal.GDT_Float32, input_nodata)
 
 
 def process_seals_lulc():
@@ -1117,11 +1117,8 @@ def process_seals_lulc():
 
 def calculate_monthly_ET0():
     """Calculate monthly reference evapotranspiration."""
-    def calc_ET0(RA, tmin, tmax, P):
+    def calc_ET0(RA, tmin, tmax, P, temperature_mult_factor):
         """Modified Hargreaves from Droogers and Allen 2002.
-
-        IT IS ASSUMED HERE THAT TEMPERATURE RASTERS ARE IN UNITS OF DEGREES C
-        TIMES 10! THIS IS TRUE FOR WORLDCLIM FUTURE CMIP5 RASTERS.
 
         Parameters:
             RA (float): extraterrestrial radiation for this month
@@ -1130,6 +1127,8 @@ def calculate_monthly_ET0():
             tmax (numpy.ndarray): maximum temperature for the month
                 IN DEGREES * 10
             P (numpy.ndarray): monthly precipitation, mm
+            temperature_mult_factor (float): factor by which temperature inputs
+                must be multiplied in order to get degrees C
 
         Returns:
             monthly reference evapotranspiration (mm)
@@ -1141,11 +1140,14 @@ def calculate_monthly_ET0():
             (~numpy.isclose(P, precip_nodata)))
         tavg = numpy.empty(tmin.shape, dtype=numpy.float32)
         tavg[:] = precip_nodata
-        tavg[valid_mask] = ((tmin[valid_mask] + tmax[valid_mask] / 2.) / 10.)
+        tavg[valid_mask] = (
+            (tmin[valid_mask] + tmax[valid_mask] / 2.) *
+            temperature_mult_factor)
 
         tdiff = numpy.empty(tmin.shape, dtype=numpy.float32)
         tdiff[:] = precip_nodata
-        tdiff[valid_mask] = ((tmax[valid_mask] - tmin[valid_mask]) / 10.)
+        tdiff[valid_mask] = (
+            (tmax[valid_mask] - tmin[valid_mask]) * temperature_mult_factor)
 
         result = numpy.empty(tmin.shape, dtype=numpy.float32)
         result[:] = precip_nodata
@@ -1176,12 +1178,12 @@ def calculate_monthly_ET0():
     outer_ET_dir = "F:/Moore_Amazon_backups/ET0"
 
     # current
-    current_precip_dir = "E:/GIS_local_archive/General_useful_data/Worldclim_2.1"
+    current_precip_dir = "F:/Moore_Amazon_backups/precipitation/current"
     current_tmin_dir =  "E:/GIS_local_archive/General_useful_data/Worldclim_2.1/tmin"
     current_tmax_dir = "E:/GIS_local_archive/General_useful_data/Worldclim_2.1/tmax"
-    precip_eg = os.path.join(current_precip_dir, 'wc2.1_5m_prec_01.tif')
-    tmin_eg = os.path.join(current_tmin_dir, '*.tif')  # TODO
-    tmax_eg = os.path.join(current_tmax_dir, '*.tif')  # TODO
+    precip_eg = os.path.join(current_precip_dir, 'wc2.1_5m_prec_1.tif')
+    tmin_eg = os.path.join(current_tmin_dir, 'wc2.1_5m_tmin_01.tif')
+    tmax_eg = os.path.join(current_tmax_dir, 'wc2.1_5m_tmax_01.tif')
     tmin_nodata = pygeoprocessing.get_raster_info(tmin_eg)['nodata'][0]
     tmax_nodata = pygeoprocessing.get_raster_info(tmax_eg)['nodata'][0]
 
@@ -1190,24 +1192,27 @@ def calculate_monthly_ET0():
     clipping_box = target_info['bounding_box']
     target_srs_wkt = target_info['projection_wkt']
     model_resolution = target_info['pixel_size'][0]
+    temperature_mult_factor = 1.  # current temperature in units of deg C
     for m in range(1, 13):
         out_path = os.path.join(
             outer_ET_dir, 'current', 'ET0_{}.tif'.format(m))
         if not os.path.isfile(out_path):
-            raw_tmin_path = os.path.join(current_tmin_dir, 'tmin.tif')  # TODO check filename
+            raw_tmin_path = os.path.join(
+                current_tmin_dir, 'wc2.1_5m_tmin_{:02}.tif'.format(m))
             tmin_path = os.path.join(intermediate_dir, 'tmin_proj.tif')
             clip_and_project_raster(
                 raw_tmin_path, clipping_box, target_srs_wkt,
                 model_resolution, intermediate_dir, '', tmin_path)
 
-            raw_tmax_path = os.path.join(current_tmax_dir, 'tmax.tif')  # TODO
+            raw_tmax_path = os.path.join(
+                current_tmax_dir, 'wc2.1_5m_tmax_{:02}.tif'.format(m))
             tmax_path = os.path.join(intermediate_dir, 'tmax_proj.tif')
             clip_and_project_raster(
                 raw_tmax_path, clipping_box, target_srs_wkt,
                 model_resolution, intermediate_dir, '', tmax_path)
 
             precip_path = os.path.join(
-                current_precip_dir, 'wc2.1_5m_prec_{:02}.tif'.format(m))
+                current_precip_dir, 'wc2.1_5m_prec_{}.tif'.format(m))
             # align tmin, tmax, precip
             base_raster_path_list = [tmin_path, tmax_path, precip_path]
             aligned_raster_path_list = [
@@ -1222,7 +1227,8 @@ def calculate_monthly_ET0():
             radiation = radiation_dict[m]
             pygeoprocessing.raster_calculator(
                 [(radiation, 'raw')] + [
-                    (path, 1) for path in aligned_raster_path_list],
+                    (path, 1) for path in aligned_raster_path_list] +
+                    [(temperature_mult_factor, 'raw')],
                 calc_ET0, out_path, gdal.GDT_Float32, precip_nodata)
 
     # future
@@ -1240,8 +1246,9 @@ def calculate_monthly_ET0():
     clipping_box = target_info['bounding_box']
     target_srs_wkt = target_info['projection_wkt']
     model_resolution = target_info['pixel_size'][0]
-    for year in ['50']:  # , '70']:  # year after 2000
-        for rcp in [2.6]:  # , 6.0, 8.5]:  # RCP  TODO
+    temperature_mult_factor = 0.1  # future temperature in units of deg C * 10
+    for year in ['50', '70']:  # year after 2000
+        for rcp in [2.6, 6.0, 8.5]:  # RCP
             for m in range(1, 13):
                 out_path = os.path.join(
                     outer_ET_dir, 'year_20{}'.format(year),
@@ -1285,15 +1292,36 @@ def calculate_monthly_ET0():
                     radiation = radiation_dict[m]
                     pygeoprocessing.raster_calculator(
                         [(radiation, 'raw')] + [
-                            (path, 1) for path in aligned_raster_path_list],
+                            (path, 1) for path in aligned_raster_path_list] +
+                        [(temperature_mult_factor, 'raw')],
                         calc_ET0, out_path, gdal.GDT_Float32, precip_nodata)
+
+
+def rename_rasters():
+    """Insert a non-integer character in precip raster names."""
+    # precipitation rasters
+    outer_precip_dir = 'F:/Moore_Amazon_backups/precipitation'
+    for year in ['50', '70']:
+        for rcp in [2.6, 6.0, 8.5]:
+            for m in range(1, 13):
+                precip_dir = os.path.join(
+                    outer_precip_dir, 'year_20{}'.format(year),
+                    'rcp_{}'.format(rcp))
+                pr_source = os.path.join(
+                    precip_dir, "mi{}pr{}{}.tif".format(
+                        int(rcp * 10), year, m))
+                pr_destination = os.path.join(
+                    precip_dir, "mi{}pr{}_{}.tif".format(
+                        int(rcp * 10), year, m))
+                shutil.copyfile(pr_source, pr_destination)
+                os.remove(pr_source)
 
 
 if __name__ == "__main__":
     __spec__ = None  # for running with pdb
-    out_dir = "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use"
-    if not os.path.isdir(out_dir):
-        os.makedirs(out_dir)
+    # out_dir = "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use"
+    # if not os.path.isdir(out_dir):
+    #     os.makedirs(out_dir)
     # summarize_terrain(out_dir)
     # summarize_landcover(out_dir)
     # process_hansen_tiles(out_dir)
@@ -1308,4 +1336,5 @@ if __name__ == "__main__":
     # process_precip()
     # calculate_erosivity()
     # process_seals_lulc()
-    calculate_monthly_ET0()
+    # calculate_monthly_ET0()
+    # rename_rasters()

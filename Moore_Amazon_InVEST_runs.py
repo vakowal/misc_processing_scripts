@@ -12,6 +12,7 @@ from osgeo import ogr
 from osgeo import osr
 
 import natcap.invest.sdr.sdr
+import natcap.invest.seasonal_water_yield.seasonal_water_yield
 import natcap.invest.utils
 
 LOGGER = logging.getLogger(__name__)
@@ -24,57 +25,110 @@ formatter = logging.Formatter(
 handler.setFormatter(formatter)
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 
-args = {
-    'dem_path': 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/HydroSHEDS_CON_Chaglla_UTM18S.tif',
-    'drainage_path': '',
-    'erodibility_path': 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/erodibility_ISRIC_30arcseconds.tif',
-    'ic_0_param': '0.5',
-    'k_param': '2',
-    'results_suffix': '',
-    'sdr_max': '0.8',
-    'threshold_flow_accumulation': '1000',
-    'watersheds_path': 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/Chaglla_dam_watershed.shp',
-    'biophysical_table_path': 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/biophysical_table_Chaglla_SEALS_simplified.csv',
-}
+# common data inputs used for both SDR and SWY
+_AOI = 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/Chaglla_dam_watershed.shp'
+_BIOPHYS = 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/biophysical_table_Chaglla_SEALS_simplified.csv'
+_DEM = 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/HydroSHEDS_CON_Chaglla_UTM18S.tif'
+_TFA_VAL = '1000'
+_CURRENT_LULC = 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/SEALS_lulc/lulc_current.tif'
+_LULC_PATTERN = 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/SEALS_lulc/lulc_RCP{}_year{}.tif'
 
 
-def sdr_outputs_to_dict(watershed_results_path):
-    """Read sdr results from watershed results and return as a dict."""
-    sdr_dict = {
-        'WS_ID': [],
-        'usle_tot': [],
-        'sed_export': [],
-        'sed_retent': [],
-        'sed_dep': [],
-    }
+def outputs_to_dict(watershed_results_path, field_list):
+    """Read results from watershed results and return as a dict."""
+    field_list.append('WS_ID')
+    model_dict = {field: [] for field in field_list}
     ws_vector = ogr.Open(watershed_results_path)
     ws_layer = ws_vector.GetLayer()
     for ws_feature in ws_layer:
-        for field_name in sdr_dict:
-            sdr_dict[field_name].append(ws_feature.GetField(field_name))
+        for field_name in model_dict:
+            model_dict[field_name].append(ws_feature.GetField(field_name))
 
     ws_layer = None
     ws_layer = None
-    return sdr_dict
+    return model_dict
 
 
-if __name__ == '__main__':
+def swy_runs():
+    """Run SWY for current and future scenarios."""
+    args = {
+        'alpha_m': '1/12',
+        'aoi_path': _AOI,
+        'beta_i': '1',
+        'biophysical_table_path': _BIOPHYS,
+        'dem_raster_path': _DEM,
+        'gamma': '1',
+        'monthly_alpha': False,
+        'rain_events_table_path': 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/rain_events_Chaglla_centroid_iwmi_water_atlas.csv',
+        'results_suffix': '',
+        'soil_group_path': 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/hydrologic_soil_group.tif',
+        'threshold_flow_accumulation': _TFA_VAL,
+        'user_defined_climate_zones': False,
+        'user_defined_local_recharge': False,
+    }
+    result_dir = 'C:/SWY_workspace'
+    swy_fields = ['qb', 'vri_sum']
+    precip_dir_pattern = 'F:/Moore_Amazon_backups/precipitation/year_{}/rcp_{}'
+    et0_dir_pattern = 'F:/Moore_Amazon_backups/ET0/year_{}/rcp_{}'
+
+    # current
+    args['workspace_dir'] = os.path.join(result_dir, 'current')
+    args['lulc_raster_path'] = _CURRENT_LULC
+    args['precip_dir'] = 'F:/Moore_Amazon_backups/precipitation/current'
+    args['et0_dir'] = 'F:/Moore_Amazon_backups/ET0/current'
+    watershed_results_path = os.path.join(
+        args['workspace_dir'], 'aggregated_results_swy.shp')
+    if not os.path.isfile(watershed_results_path):
+        natcap.invest.seasonal_water_yield.seasonal_water_yield.execute(args)
+    # TODO collect results
+
+    # future
+    for year in ['2050', '2070']:
+        for rcp in ['2.6', '6.0', '8.5']:
+            args['workspace_dir'] = os.path.join(
+                result_dir, 'year_{}'.format(year), 'rcp_{}'.format(rcp))
+            args['lulc_path'] = _LULC_PATTERN.format(rcp, year)
+            args['precip_dir'] = precip_dir_pattern.format(year, rcp)
+            args['et0_dir'] = et0_dir_pattern.format(year, rcp)
+            watershed_results_path = os.path.join(
+                args['workspace_dir'], 'aggregated_results_swy.shp')
+            if not os.path.isfile(watershed_results_path):
+                natcap.invest.seasonal_water_yield.seasonal_water_yield.execute(args)
+    # TODO collect results
+
+
+def sdr_runs():
+    """Run SDR for current and future scenarios."""
     # outer_dir = 'C:/Users/ginge/Documents/NatCap/GIS_local/Moore_Amazon'
     # result_dir = os.path.join(outer_dir, 'SDR_workspace')
+    args = {
+        'dem_path': _DEM,
+        'drainage_path': '',
+        'erodibility_path': 'C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/projected/erodibility_ISRIC_30arcseconds.tif',
+        'ic_0_param': '0.5',
+        'k_param': '2',
+        'results_suffix': '',
+        'sdr_max': '0.8',
+        'threshold_flow_accumulation': _TFA_VAL,
+        'watersheds_path': _AOI,
+        'biophysical_table_path': _BIOPHYS,
+    }
+
     result_dir = 'C:/SDR_workspace'
-    lulc_pattern = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/SEALS_lulc/lulc_RCP{}_year{}.tif"
+    sdr_fields = ['usle_tot', 'sed_export', 'sed_retent', 'sed_dep']
     erosivity_pattern = "F:/Moore_Amazon_backups/precipitation/erosivity_Riquetti/erosivity_year{}_rcp{}.tif"
 
     df_list = []
 
     # SEALS landcover, "Riquetti" erosivity
     args['workspace_dir'] = os.path.join(result_dir, 'current')
-    args['lulc_path'] = "C:/Users/ginge/Dropbox/NatCap_backup/Moore_Amazon/SDR_SWY_data_inputs/SEALS_lulc/lulc_current.tif"
+    args['lulc_path'] = _CURRENT_LULC
     args['erosivity_path'] = 'F:/Moore_Amazon_backups/precipitation/erosivity_Riquetti/erosivity_current.tif'
     # natcap.invest.sdr.sdr.execute(args)
 
-    sdr_dict = sdr_outputs_to_dict(
-        os.path.join(args['workspace_dir'], 'watershed_results_sdr.shp'))
+    sdr_dict = outputs_to_dict(
+        os.path.join(args['workspace_dir'], 'watershed_results_sdr.shp'),
+        sdr_fields)
     sdr_dict['year'] = ['2015' * len(sdr_dict['WS_ID'])]
     sdr_dict['scenario'] = ['current' * len(sdr_dict['WS_ID'])]
     sdr_dict['erosivity'] = ['Riquetti_current' * len(sdr_dict['WS_ID'])]
@@ -87,12 +141,12 @@ if __name__ == '__main__':
             args['workspace_dir'] = os.path.join(
                 result_dir, 'year_{}'.format(year), 'rcp_{}'.format(rcp),
                 'current_erosivity')
-            args['lulc_path'] = lulc_pattern.format(rcp, year)
+            args['lulc_path'] = _LULC_PATTERN.format(rcp, year)
             natcap.invest.sdr.sdr.execute(args)
 
-            sdr_dict = sdr_outputs_to_dict(
+            sdr_dict = outputs_to_dict(
                 os.path.join(args['workspace_dir'],
-                'watershed_results_sdr.shp'))
+                'watershed_results_sdr.shp'), sdr_fields)
             sdr_dict['year'] = [year * len(sdr_dict['WS_ID'])]
             sdr_dict['scenario'] = [rcp * len(sdr_dict['WS_ID'])]
             sdr_dict['erosivity'] = [
@@ -106,9 +160,9 @@ if __name__ == '__main__':
             args['erosivity_path'] = erosivity_pattern.format(year[2:], rcp)
             # natcap.invest.sdr.sdr.execute(args)
 
-            sdr_dict = sdr_outputs_to_dict(
+            sdr_dict = outputs_to_dict(
                 os.path.join(args['workspace_dir'],
-                'watershed_results_sdr.shp'))
+                'watershed_results_sdr.shp'), sdr_fields)
             sdr_dict['year'] = [year * len(sdr_dict['WS_ID'])]
             sdr_dict['scenario'] = [rcp * len(sdr_dict['WS_ID'])]
             sdr_dict['erosivity'] = [
@@ -120,3 +174,7 @@ if __name__ == '__main__':
     summary_df.to_csv(
         os.path.join(result_dir, 'watershed_results_summary.csv'), index=False)
 
+
+if __name__ == '__main__':
+    # sdr_runs()
+    swy_runs()
