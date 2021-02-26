@@ -596,6 +596,8 @@ def summarize_ssp_landcover(out_dir):
     # shp_path = "G:/Shared drives/Moore Amazon Hydro/1_base_data/Vector_data/Chaglla_dam_watershed.shp"
     landcover_path_dict = {
         'current': "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_esa_2015_reclassified_to_seals_simplified.tif",
+        'SSP4_2050': "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_RCP6.0_SSP4_2050.tif",
+        'SSP4_2070': "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_RCP6.0_SSP4_2070.tif",
         'SSP3_2050': "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_RCP7.0_SSP3_2050.tif",
         'SSP3_2070': "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_RCP7.0_SSP3_2070.tif",
         'SSP5_2050': "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use/lulc_RCP8.5_SSP5_2050.tif",
@@ -1297,29 +1299,8 @@ def calculate_monthly_ET0():
                         calc_ET0, out_path, gdal.GDT_Float32, precip_nodata)
 
 
-def rename_rasters():
-    """Insert a non-integer character in precip raster names."""
-    # precipitation rasters
-    outer_precip_dir = 'F:/Moore_Amazon_backups/precipitation'
-    for year in ['50', '70']:
-        for rcp in [2.6, 6.0, 8.5]:
-            for m in range(1, 13):
-                precip_dir = os.path.join(
-                    outer_precip_dir, 'year_20{}'.format(year),
-                    'rcp_{}'.format(rcp))
-                pr_source = os.path.join(
-                    precip_dir, "mi{}pr{}{}.tif".format(
-                        int(rcp * 10), year, m))
-                pr_destination = os.path.join(
-                    precip_dir, "mi{}pr{}_{}.tif".format(
-                        int(rcp * 10), year, m))
-                shutil.copyfile(pr_source, pr_destination)
-                os.remove(pr_source)
-
-
 if __name__ == "__main__":
-    __spec__ = None  # for running with pdb
-    # out_dir = "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use"
+    out_dir = "F:/Moore_Amazon_backups/Johnson_SEALS_future_land_use"
     # if not os.path.isdir(out_dir):
     #     os.makedirs(out_dir)
     # summarize_terrain(out_dir)
@@ -1330,11 +1311,10 @@ if __name__ == "__main__":
     # process_WDPA_intersect_tables()
     # count_protected_areas()
     # process_WDPA_area_tables()
-    # summarize_ssp_landcover(out_dir)
+    summarize_ssp_landcover(out_dir)
     # ssp_change_maps(out_dir)
     # reclassify_soil_group()
     # process_precip()
     # calculate_erosivity()
     # process_seals_lulc()
     # calculate_monthly_ET0()
-    # rename_rasters()
