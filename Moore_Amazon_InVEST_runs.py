@@ -196,6 +196,8 @@ def monthly_quickflow_sum(swy_args):
 
         Use a static multiplier to convert mm/month to meters per second, then
         multiply that by pixel area to calculate cubic meters per second.
+        Multiplier to convert mm/month to m/sec:
+            1/1000 (m/mm) * 1/2624672 (sec/month) = 3.81E-10
 
         Parameters:
             mm_raster (numpy.ndarray): raster whose values are in units of mm
@@ -255,41 +257,12 @@ def attribute_baseflow_by_precip(swy_args):
             at outlet in that month
 
     """
-    def mm_per_year_to_m3_per_sec(mm_raster):
-        """Calculate average m3 per second from mm per year.
-
-        Use a static multiplier to convert mm/year to meters per second, then
-        multiply that by pixel area to calculate cubic meters per second.
-
-        Parameters:
-            mm_raster (numpy.ndarray): raster whose values are in units of mm
-                per pixel per year
-
-        Returns:
-            raster with values in cubic meter per second
-
-        """
-        valid_mask = (mm_raster != input_nodata)
-        result = numpy.empty(mm_raster.shape, dtype=numpy.float32)
-        result[:] = input_nodata
-        result[valid_mask] = (
-            mm_raster[valid_mask] * 3.17098E-11 * pixel_area_m)
-        return result
-
-    # convert annual baseflow to m3/sec and calculate watershed sum
+    # calculate sum of annual baseflow in mm per pixel per year
     baseflow_path = os.path.join(swy_args['workspace_dir'], 'B.tif')
     pixel_area_m = pygeoprocessing.get_raster_info(
         baseflow_path)['pixel_size'][0]**2
-    input_nodata = pygeoprocessing.get_raster_info(baseflow_path)['nodata'][0]
-    with tempfile.NamedTemporaryFile(
-            prefix='baseflow_m3', delete=False,
-            suffix='.tif') as baseflow_file:
-        baseflow_m3_per_sec_path = baseflow_file.name
-    pygeoprocessing.raster_calculator(
-        [(baseflow_path, 1)],mm_per_year_to_m3_per_sec,
-        baseflow_m3_per_sec_path, gdal.GDT_Float32, input_nodata)
     baseflow_sum = pygeoprocessing.zonal_statistics(
-        (baseflow_m3_per_sec_path, 1), swy_args['aoi_path'])[0]['sum']
+        (baseflow_path, 1), swy_args['aoi_path'])[0]['sum']
 
     # find precip rasters and calculate sum of precip in watershed
     precip_dict = {'month_p': [], 'precip': []}
@@ -313,8 +286,12 @@ def attribute_baseflow_by_precip(swy_args):
     precip_df['proportion'] = precip_df['precip'] / sum(precip_df['precip'])
     precip_df['month'] = precip_df['month_p'] + 1
     precip_df.loc[precip_df['month_p'] == 12, 'month'] = 1
-    precip_df['baseflow'] = baseflow_sum * precip_df['proportion']
-    baseflow_df = precip_df[['month', 'baseflow']]
+    precip_df['baseflow_mm_month'] = baseflow_sum * precip_df['proportion']
+
+    # convert monthly baseflow in mm/month to average m3/sec
+    precip_df['baseflow_m3_sec'] = (
+        precip_df['baseflow_mm_month'] * 3.81E-10 * pixel_area_m)
+    baseflow_df = precip_df[['month', 'baseflow_m3_sec']]
     return baseflow_df
 
 
@@ -345,7 +322,7 @@ def sdr_runs():
     args['workspace_dir'] = os.path.join(result_dir, 'current')
     args['lulc_path'] = _CURRENT_LULC
     args['erosivity_path'] = 'F:/Moore_Amazon_backups/precipitation/erosivity_Riquetti/erosivity_current.tif'
-    # natcap.invest.sdr.sdr.execute(args)
+    natcap.invest.sdr.sdr.execute(args)
 
     sdr_dict = outputs_to_dict(
         os.path.join(args['workspace_dir'], 'watershed_results_sdr.shp'),
@@ -379,7 +356,7 @@ def sdr_runs():
             args['workspace_dir'] = os.path.join(
                 result_dir, 'year_{}'.format(year), 'rcp_{}'.format(rcp))
             args['erosivity_path'] = erosivity_pattern.format(year[2:], rcp)
-            # natcap.invest.sdr.sdr.execute(args)
+            natcap.invest.sdr.sdr.execute(args)
 
             sdr_dict = outputs_to_dict(
                 os.path.join(args['workspace_dir'],

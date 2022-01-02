@@ -166,6 +166,44 @@ def average_raster_value_in_aoi(raster_list, aoi_path):
     return mean_value
 
 
+def raster_band_mean(raster_path, input_nodata, target_path, target_nodata):
+    """Calculate the mean per pixel across 12 bands in a raster.
+
+    Sum the values in bands of `raster_path` element-wise, treating nodata as
+    zero, and divide by number of bands. Areas where all inputs are nodata will
+    be nodata in the output. Assume the raster has 12 bands
+
+    Args:
+        raster_path (string): path to raster with 12 bands corresponding to 12
+            months of the year
+        input_nodata (float or int): nodata value in the input rasters
+        target_path (string): path to location to store the result
+        target_nodata (float or int): nodata value for the result raster
+
+    Side effects:
+        modifies or creates the raster indicated by `target_path`
+
+    Returns:
+        None
+
+    """
+    def raster_mean_op_nodata_remove(*band_list):
+        """Add the rasters in band_list, treating nodata as zero."""
+        invalid_mask = numpy.all(
+            numpy.isclose(numpy.array(band_list), input_nodata), axis=0)
+        for r in band_list:
+            numpy.place(r, numpy.isclose(r, input_nodata), [0])
+        sum_of_rasters = numpy.sum(band_list, axis=0)
+        raster_mean = sum_of_rasters / 12.
+        raster_mean[invalid_mask] = target_nodata
+        return raster_mean
+
+    pygeoprocessing.raster_calculator(
+        [(raster_path, band) for band in range(1, 13)],
+        raster_mean_op_nodata_remove, target_path, gdal.GDT_Float32,
+        target_nodata)
+
+
 def raster_band_sum(raster_path, input_nodata, target_path, target_nodata):
     """Calculate the sum per pixel across bands in a raster.
 
@@ -601,7 +639,6 @@ def average_temperature():
             sum_of_rasters[divide_mask], num_observations[divide_mask])
         return mean_of_rasters
 
-
     min_temp_pattern = "E:/GIS_local_archive/General_useful_data/Worldclim_2.0/temperature_min/wc2.0_30s_tmin_{}.tif"
     max_temp_pattern = "E:/GIS_local_archive/General_useful_data/Worldclim_2.0/temperature_max/wc2.0_30s_tmax_{}.tif"
     temperature_path_list = (
@@ -622,9 +659,149 @@ def average_temperature():
     print("zonal stats!")
 
 
+def perc_change_per_pixel():
+    """Calculate percent change per pixel."""
+    def raster_mean_op(*raster_list):
+        """Calculate the mean value pixel-wise from rasters in raster_list."""
+        valid_mask = numpy.any(
+            ~numpy.isclose(numpy.array(raster_list), input_nodata), axis=0)
+        # get number of valid observations per pixel
+        num_observations = numpy.count_nonzero(
+            ~numpy.isclose(numpy.array(raster_list), input_nodata), axis=0)
+        for r in raster_list:
+            numpy.place(r, numpy.isclose(r, input_nodata), [0])
+        sum_of_rasters = numpy.sum(raster_list, axis=0)
+
+        divide_mask = (
+            (num_observations > 0) &
+            valid_mask)
+
+        mean_of_rasters = numpy.empty(
+            sum_of_rasters.shape, dtype=numpy.float32)
+        mean_of_rasters[:] = input_nodata
+        mean_of_rasters[valid_mask] = 0
+        mean_of_rasters[divide_mask] = numpy.divide(
+            sum_of_rasters[divide_mask], num_observations[divide_mask])
+        return mean_of_rasters
+
+    def perc_diff_raster(baseline, scenario):
+        """Calculate percent difference from baseline, pixel-wise."""
+        valid_mask = (
+            (~numpy.isclose(baseline, baseline_nodata)) &
+            (~numpy.isclose(scenario, scenario_nodata)) &
+            (baseline != 0))
+        result = numpy.empty(baseline.shape, dtype=numpy.float32)
+        result[:] = baseline_nodata
+        result[valid_mask] = (
+            (scenario[valid_mask] - baseline[valid_mask]) /
+            baseline[valid_mask] * 100)
+        return result
+
+    def subtract_rasters(baseline, scenario):
+        """Absolute difference: Subtract baseline from scenario."""
+        valid_mask = (
+            (~numpy.isclose(baseline, baseline_nodata)) &
+            (~numpy.isclose(scenario, scenario_nodata)))
+        result = numpy.empty(baseline.shape, dtype=numpy.float32)
+        result[:] = baseline_nodata
+        result[valid_mask] = (scenario[valid_mask] - baseline[valid_mask])
+        return result
+
+    processing_dir = "C:/deleteme/climate_processing/rpm_inputs"
+    if not os.path.exists(processing_dir):
+        os.makedirs(processing_dir)
+    steppe_shp_path = "E:/GIS_local/Mongolia/WCS_Eastern_Steppe_workshop/southeastern_aimags_aoi_WGS84.shp"
+    current_dir = "C:/Users/ginge/Documents/NatCap/GIS_local/Mongolia/Eastern_steppe_scenarios/current/RPM_workspace/aligned_inputs"
+    future_dir = "C:/Users/ginge/Documents/NatCap/GIS_local/Mongolia/Eastern_steppe_scenarios/CanESM5_ssp370_2061-2080/RPM_workspace/aligned_inputs"
+    # tmin
+    # average value across months for each pixel in Eastern Steppe: future
+    tmin_path_list = [
+        os.path.join(future_dir, 'aligned_tmin_2016_{}.tif'.format(m)) for m
+        in range(1, 13)]
+    input_nodata = pygeoprocessing.get_raster_info(
+        tmin_path_list[0])['nodata'][0]
+    future_mean_path = os.path.join(processing_dir, 'mean_future_tmin.tif')
+    if not os.path.isfile(future_mean_path):
+        print("calc mean raster for future")
+        pygeoprocessing.raster_calculator(
+            [(path, 1) for path in tmin_path_list],
+            raster_mean_op, future_mean_path, gdal.GDT_Float32,
+            input_nodata)
+
+    # current
+    tmin_path_list = [
+        os.path.join(current_dir, 'aligned_wc2.0_30s_tmin_{}.tif'.format(m))
+        for m in range(1, 13)]
+    input_nodata = pygeoprocessing.get_raster_info(
+        tmin_path_list[0])['nodata'][0]
+    current_mean_path = os.path.join(processing_dir, 'mean_current_tmin.tif')
+    if not os.path.isfile(current_mean_path):
+        print("calc mean raster for current tmin")
+        pygeoprocessing.raster_calculator(
+            [(path, 1) for path in tmin_path_list],
+            raster_mean_op, current_mean_path, gdal.GDT_Float32,
+            input_nodata)
+
+    # absolute diff
+    diff_path = os.path.join(processing_dir, 'diff_tmin.tif')
+    if not os.path.isfile(diff_path):
+        print("calc percent diff tmin")
+        baseline_nodata = pygeoprocessing.get_raster_info(
+            current_mean_path)['nodata'][0]
+        scenario_nodata = pygeoprocessing.get_raster_info(
+            future_mean_path)['nodata'][0]
+        pygeoprocessing.raster_calculator(
+            [(path, 1) for path in [current_mean_path, future_mean_path]],
+            subtract_rasters, diff_path, gdal.GDT_Float32,
+            baseline_nodata)
+
+    # prec
+    # average value across months for each pixel in Eastern Steppe: future
+    prec_path_list = [
+        os.path.join(future_dir, 'aligned_precip_2016_{}.tif'.format(m)) for m
+        in range(1, 13)]
+    input_nodata = pygeoprocessing.get_raster_info(
+        prec_path_list[0])['nodata'][0]
+    future_mean_path = os.path.join(processing_dir, 'mean_future_prec.tif')
+    if not os.path.isfile(future_mean_path):
+        print("calc mean raster for future prec")
+        pygeoprocessing.raster_calculator(
+            [(path, 1) for path in prec_path_list],
+            raster_mean_op, future_mean_path, gdal.GDT_Float32,
+            input_nodata)
+
+    # current
+    prec_path_list = [
+        os.path.join(current_dir, 'aligned_precip_2016_{}.tif'.format(m)) for m
+        in range(1, 13)]
+    input_nodata = pygeoprocessing.get_raster_info(
+        prec_path_list[0])['nodata'][0]
+    current_mean_path = os.path.join(processing_dir, 'mean_current_prec.tif')
+    if not os.path.isfile(current_mean_path):
+        print("calc mean raster for current prec")
+        pygeoprocessing.raster_calculator(
+            [(path, 1) for path in prec_path_list],
+            raster_mean_op, current_mean_path, gdal.GDT_Float32,
+            input_nodata)
+
+    # percent diff
+    perc_diff_path = os.path.join(processing_dir, 'prec_diff_prec.tif')
+    if not os.path.isfile(perc_diff_path):
+        print("calc percent diff prec")
+        baseline_nodata = pygeoprocessing.get_raster_info(
+            current_mean_path)['nodata'][0]
+        scenario_nodata = pygeoprocessing.get_raster_info(
+            future_mean_path)['nodata'][0]
+        pygeoprocessing.raster_calculator(
+            [(path, 1) for path in [current_mean_path, future_mean_path]],
+            perc_diff_raster, perc_diff_path, gdal.GDT_Float32,
+            baseline_nodata)
+
+
 if __name__ == "__main__":
     # summarize_future_climate()
     # add_current_climate()
     # time_series_at_points()
     # summarize_winter_temps()
-    average_temperature()
+    # average_temperature()
+    perc_change_per_pixel()
